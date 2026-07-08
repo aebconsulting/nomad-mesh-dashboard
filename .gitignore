@@ -1,0 +1,19 @@
+# dependencies / build output
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+
+# local data / secrets
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+*.bak
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/
