@@ -44,7 +44,7 @@ header {
   background: color-mix(in srgb, var(--ok) 8%, transparent);
   padding: 4px 10px; border-radius: 2px;
 }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: pulse 2.4s infinite; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 2.4s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
 .hdr-right { margin-left: auto; display: flex; gap: 14px; align-items: center; font-family: var(--mono); font-size: 12px; color: var(--muted); }
@@ -68,13 +68,16 @@ header {
 /* ---------- command-center grid ---------- */
 .cmd-grid { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 14px; align-items: stretch; }
 .chat-rail { display: flex; flex-direction: column; min-width: 0; }
-.chat-rail .panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* The rail is viewport-sized so the feed scrolls INTERNALLY; without a hard
+   height the feed's full history would stretch the whole hero row with it. */
+.chat-rail .panel { height: clamp(520px, calc(100vh - 240px), 940px); display: flex; flex-direction: column; min-height: 0; }
 .chat-rail .feed { flex: 1; max-height: none; min-height: 0; }
 .lower-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 14px; align-items: start; }
 .lower-grid > .panel { min-width: 0; }
 .nodes-panel .tbl-wrap { height: 420px; }
 @media (max-width: 1100px) {
   .cmd-grid, .lower-grid { grid-template-columns: 1fr; }
+  .chat-rail .panel { height: auto; }
   .chat-rail .feed { max-height: 52vh; }
 }
 
