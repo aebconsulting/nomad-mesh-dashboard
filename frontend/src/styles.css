@@ -49,6 +49,7 @@ header {
 @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
 .hdr-right { margin-left: auto; display: flex; gap: 14px; align-items: center; font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .hdr-right .chan { color: var(--faint); }
+.tab.ext { text-decoration: none; display: inline-flex; align-items: center; }
 
 /* ---------- mesh-vitals strip (signature) ---------- */
 .vitals { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }

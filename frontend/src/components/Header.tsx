@@ -29,9 +29,12 @@ export function Header({ status, unreachable }: { status: Status | null; unreach
 
   return (
     <header>
-      <div className="brand"><b>MESH BASE — {status?.bridge?.node ?? "RZRB"}</b><span>NOMAD · aibox</span></div>
+      <div className="brand"><b>MERIDIAN</b><span>mesh command center · {status?.bridge?.node ?? "RZRB"} · aibox</span></div>
       <span className={`badge-live lvl-${level}`}><span className="dot" />{label}</span>
-      <div className="hdr-right"><span>{new Date().toLocaleString()}</span></div>
+      <div className="hdr-right">
+        <a className="tab ext" href="https://meshmonitor.meshnomad.ai" target="_blank" rel="noopener noreferrer" title="Radio owner UI — config, channels, packet admin">MeshMonitor ↗</a>
+        <span>{new Date().toLocaleString()}</span>
+      </div>
     </header>
   );
 }
