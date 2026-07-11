@@ -24,24 +24,24 @@ export default function App() {
     <div className="wrap">
       <Header status={status.data} unreachable={status.stale} />
       <Vitals status={status.data} stats={stats.data} nodes={nodes.data?.items ?? []} />
-      <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onOpenDetail={setDetailNode} />
-      <div className="grid">
-        <div className="col">
+      <div className="cmd-grid">
+        <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onOpenDetail={setDetailNode} />
+        <div className="chat-rail">
           <Feed
             items={feed.data?.items ?? []} nodes={nodes.data?.items ?? []} stale={feed.stale}
             dmTarget={dmTarget} onDmTargetChange={setDmTarget} showOffline={showOffline}
           />
         </div>
-        <div className="col">
-          <Nodes
-            items={nodes.data?.items ?? []} stale={nodes.stale}
-            onSelectNode={(id) => setDmTarget(id)}
-            onOpenDetail={setDetailNode}
-            showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)}
-          />
-        </div>
       </div>
-      <LogPanel items={log.data?.items ?? []} stale={log.stale} />
+      <div className="lower-grid">
+        <Nodes
+          items={nodes.data?.items ?? []} stale={nodes.stale}
+          onSelectNode={(id) => setDmTarget(id)}
+          onOpenDetail={setDetailNode}
+          showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)}
+        />
+        <LogPanel items={log.data?.items ?? []} stale={log.stale} />
+      </div>
       {detailNode && <NodeDetail nodeId={detailNode} onClose={() => setDetailNode(null)} onDm={(id) => { setDmTarget(id); setDetailNode(null); }} />}
     </div>
   );

@@ -27,7 +27,7 @@ body {
   font-family: var(--sans); font-size: 14px; line-height: 1.45;
   padding: 18px; min-height: 100vh;
 }
-.wrap { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.wrap { max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 
 /* ---------- header ---------- */
 header {
@@ -65,10 +65,18 @@ header {
 .up { color: var(--ok); }
 @media (max-width: 600px) { .vitals { grid-template-columns: repeat(2, 1fr); } }
 
-/* ---------- grid ---------- */
-.grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 14px; align-items: stretch; }
-@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-.col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* ---------- command-center grid ---------- */
+.cmd-grid { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 14px; align-items: stretch; }
+.chat-rail { display: flex; flex-direction: column; min-width: 0; }
+.chat-rail .panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.chat-rail .feed { flex: 1; max-height: none; min-height: 0; }
+.lower-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 14px; align-items: start; }
+.lower-grid > .panel { min-width: 0; }
+.nodes-panel .tbl-wrap { height: 420px; }
+@media (max-width: 1100px) {
+  .cmd-grid, .lower-grid { grid-template-columns: 1fr; }
+  .chat-rail .feed { max-height: 52vh; }
+}
 
 /* ---------- phones ---------- */
 @media (max-width: 600px) {
@@ -84,8 +92,7 @@ header {
      horizontal scroll. */
   .col-type, .col-role, .col-hops { display: none; }
   .nodes-panel th, .nodes-panel td { padding: 7px 9px; }
-  .nodes-body { min-height: 340px; }   /* a taller, more usable map on tall phones */
-  .feed { max-height: 52vh; }          /* feed doesn't dominate the stacked column */
+  .chat-rail .feed { max-height: 52vh; }  /* feed doesn't dominate the stacked column */
   .send { gap: 6px; }
   .combo { flex: 1 1 100%; }           /* recipient picker gets its own full-width row */
 }
@@ -174,15 +181,7 @@ header {
 @media (max-width: 600px)  { .map-hero-body { min-height: 300px; } }
 
 /* ---------- map ---------- */
-/* The Nodes panel stretches to its grid column (equal to the feed column), and
-   the map/table fill the space below the header so both views match the feed's height. */
-.nodes-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.nodes-body { position: relative; flex: 1; min-height: 240px; }
-.nodes-body .map { position: absolute; inset: 0; height: auto; background: var(--panel-2); }
-.nodes-body .tbl-wrap { position: absolute; inset: 0; overflow-y: auto; overflow-x: auto; height: auto; }
-.map {
-  position: relative; height: 280px; background: var(--panel-2);
-}
+.map { position: relative; height: 280px; background: var(--panel-2); }
 .maplibregl-map { position: absolute; inset: 0; }
 .maplibregl-popup-content { background: var(--panel); color: var(--text); font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); padding: 6px 9px; }
 .maplibregl-popup-tip { border-top-color: var(--panel); }
