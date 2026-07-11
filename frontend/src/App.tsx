@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Header } from "./components/Header";
-import { Stats } from "./components/Stats";
+import { Vitals } from "./components/Vitals";
 import { Feed } from "./components/Feed";
 import { Nodes } from "./components/Nodes";
 import { MeshMap } from "./components/MeshMap";
@@ -23,7 +23,7 @@ export default function App() {
   return (
     <div className="wrap">
       <Header status={status.data} unreachable={status.stale} />
-      <Stats status={status.data} stats={stats.data} nodes={nodes.data?.items ?? []} />
+      <Vitals status={status.data} stats={stats.data} nodes={nodes.data?.items ?? []} />
       <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onOpenDetail={setDetailNode} />
       <div className="grid">
         <div className="col">

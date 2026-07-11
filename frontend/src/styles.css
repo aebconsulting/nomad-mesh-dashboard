@@ -50,17 +50,19 @@ header {
 .hdr-right { margin-left: auto; display: flex; gap: 14px; align-items: center; font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .hdr-right .chan { color: var(--faint); }
 
-/* ---------- stat strip ---------- */
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-.stat {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+/* ---------- mesh-vitals strip (signature) ---------- */
+.vitals { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.vital {
+  background: var(--panel); border: 1px solid var(--line-soft); border-radius: 3px;
+  border-top: 2px solid var(--accent-dim);
   padding: 10px 14px; display: flex; flex-direction: column; gap: 2px;
 }
-.stat .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; color: var(--faint); text-transform: uppercase; }
-.stat .v { font-family: var(--mono); font-size: 22px; font-variant-numeric: tabular-nums; color: var(--text); }
-.stat .v small { font-size: 12px; color: var(--muted); margin-left: 4px; }
-.stat .sub { font-size: 11.5px; color: var(--muted); }
+.vital .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; color: var(--faint); text-transform: uppercase; }
+.vital .v { font-family: var(--mono); font-size: 22px; font-variant-numeric: tabular-nums; color: var(--text); }
+.vital .v small { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.vital .sub { font-size: 11.5px; color: var(--muted); }
 .up { color: var(--ok); }
+@media (max-width: 600px) { .vitals { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- grid ---------- */
 .grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 14px; align-items: stretch; }
