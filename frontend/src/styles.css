@@ -163,6 +163,13 @@ header {
   background: var(--accent); color: var(--bg-deep); border: 0; padding: 11px 18px; border-radius: 2px; font-weight: 700;
 }
 
+/* ---------- map hero ---------- */
+.map-hero { display: flex; flex-direction: column; min-height: 0; }
+.map-hero-body { position: relative; flex: 1; min-height: 520px; }
+.map-hero-body .map { position: absolute; inset: 0; height: auto; background: var(--panel-2); }
+@media (max-width: 1100px) { .map-hero-body { min-height: 380px; } }
+@media (max-width: 600px)  { .map-hero-body { min-height: 300px; } }
+
 /* ---------- map ---------- */
 /* The Nodes panel stretches to its grid column (equal to the feed column), and
    the map/table fill the space below the header so both views match the feed's height. */
