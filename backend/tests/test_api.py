@@ -363,6 +363,24 @@ def test_status_bridge_non_dict_json_is_nulled(client, monkeypatch):
     assert body["ok"] is False
     assert body["db_ok"] is True  # DB is healthy in this fixture
 
+def test_map_asset_at2x_sprite_served(client, monkeypatch, tmp_path):
+    # High-DPI sprite names contain '@' (light@2x.json); the asset allowlist
+    # must accept them or every retina/phone client loses map icons.
+    c, m = client
+    sprites = tmp_path / "maps" / "basemaps-assets" / "sprites" / "v4"
+    sprites.mkdir(parents=True)
+    (sprites / "light@2x.json").write_text("{}")
+    monkeypatch.setattr(m, "MAPS_DIR", str(tmp_path / "maps"))
+    r = c.get("/maps/assets/sprites/v4/light@2x.json")
+    assert r.status_code == 200
+
+def test_map_asset_traversal_still_blocked(client, monkeypatch, tmp_path):
+    c, m = client
+    (tmp_path / "maps" / "basemaps-assets").mkdir(parents=True)
+    monkeypatch.setattr(m, "MAPS_DIR", str(tmp_path / "maps"))
+    assert c.get("/maps/assets/../../etc/passwd").status_code in (404, 422)
+    assert c.get("/maps/assets/sprites/%2e%2e/secret.json").status_code in (404, 422)
+
 def test_stats_counts(client):
     c, _ = client
     r = c.get("/api/stats")

@@ -22,7 +22,8 @@ FEED_CAP = 500
 IMG_RE = re.compile(r"^[A-Za-z0-9._-]+\.(png|jpe?g|webp|gif)$")
 DEST_RE = re.compile(r"^![0-9a-fA-F]{8}$")
 # Map assets are addressed by relative path (fonts have spaces, e.g. "Noto Sans Regular").
-ASSET_RE = re.compile(r"^[A-Za-z0-9 _./-]+$")
+# '@' is load-bearing: high-DPI sprite files are named like light@2x.json.
+ASSET_RE = re.compile(r"^[A-Za-z0-9 _./@-]+$")
 _RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 # Networks whose members are trusted to set X-Forwarded-For on our behalf. The
