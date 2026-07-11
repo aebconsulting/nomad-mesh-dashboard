@@ -1,0 +1,291 @@
+<title>NOMAD Mesh Dashboard — Mockup</title>
+<style>
+  :root, :root[data-theme="dark"], :root[data-theme="light"] {
+    color-scheme: dark;
+    --bg: #0C1210;
+    --panel: #131B17;
+    --panel-2: #0F1613;
+    --line: #24322A;
+    --line-soft: #1B2620;
+    --text: #D8E4DC;
+    --muted: #7E948A;
+    --faint: #566B60;
+    --accent: #52E5A3;
+    --accent-dim: #2E8A63;
+    --warn: #E3B34F;
+    --crit: #E06056;
+    --ai: #5FC9D9;
+    --mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    --sans: system-ui, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 14px; line-height: 1.45;
+    padding: 18px; min-height: 100vh;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; font-family: var(--mono); }
+  .brand b { font-size: 15px; letter-spacing: .08em; color: var(--text); font-weight: 700; }
+  .brand span { color: var(--faint); font-size: 12px; letter-spacing: .05em; }
+  .badge-live {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: var(--mono); font-size: 12px; letter-spacing: .06em;
+    color: var(--accent); border: 1px solid var(--accent-dim);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    padding: 4px 10px; border-radius: 2px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2.4s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+  .hdr-right { margin-left: auto; display: flex; gap: 14px; align-items: center; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .hdr-right .chan { color: var(--faint); }
+
+  /* ---------- stat strip ---------- */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+    padding: 10px 14px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .stat .k { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; color: var(--faint); text-transform: uppercase; }
+  .stat .v { font-family: var(--mono); font-size: 22px; font-variant-numeric: tabular-nums; color: var(--text); }
+  .stat .v small { font-size: 12px; color: var(--muted); margin-left: 4px; }
+  .stat .sub { font-size: 11.5px; color: var(--muted); }
+  .up { color: var(--accent); }
+
+  /* ---------- grid ---------- */
+  .grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 14px; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .panel-h {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-bottom: 1px solid var(--line-soft);
+  }
+  .panel-h .t { font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .panel-h .n { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .panel-h .right { margin-left: auto; display: flex; gap: 6px; }
+  .tab {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .05em; cursor: pointer;
+    color: var(--muted); background: transparent; border: 1px solid var(--line);
+    padding: 3px 10px; border-radius: 2px;
+  }
+  .tab[aria-pressed="true"] { color: var(--accent); border-color: var(--accent-dim); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .tab:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ---------- feed ---------- */
+  .feed { display: flex; flex-direction: column; max-height: 460px; overflow-y: auto; }
+  .msg { display: flex; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line-soft); }
+  .msg:last-child { border-bottom: 0; }
+  .msg .ts { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; padding-top: 2px; font-variant-numeric: tabular-nums; }
+  .msg .who { font-family: var(--mono); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+  .in .who { color: var(--accent); }
+  .out .who { color: var(--warn); }
+  .aiMsg .who { color: var(--ai); }
+  .msg .body { min-width: 0; }
+  .msg .txt { color: var(--text); overflow-wrap: break-word; }
+  .tags { display: inline-flex; gap: 5px; margin-left: 7px; vertical-align: 1px; }
+  .tag {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+    padding: 1px 6px; border-radius: 2px; border: 1px solid var(--line); color: var(--muted);
+  }
+  .tag.ai { color: var(--ai); border-color: color-mix(in srgb, var(--ai) 40%, transparent); }
+  .tag.dm { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .tag.out { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+
+  /* ---------- send box ---------- */
+  .send { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel-2); flex-wrap: wrap; }
+  .send select, .send input[type="text"] {
+    background: var(--bg); border: 1px solid var(--line); color: var(--text);
+    font-family: var(--mono); font-size: 12.5px; padding: 8px 10px; border-radius: 2px;
+  }
+  .send input[type="text"] { flex: 1; min-width: 160px; }
+  .send .count { align-self: center; font-family: var(--mono); font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .send button {
+    font-family: var(--mono); font-size: 12.5px; letter-spacing: .08em; cursor: pointer;
+    background: var(--accent); color: #06130C; border: 0; padding: 8px 18px; border-radius: 2px; font-weight: 700;
+  }
+
+  /* ---------- map ---------- */
+  .map {
+    position: relative; height: 240px; background: var(--panel-2);
+    background-image:
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size: 34px 34px;
+  }
+  .node-dot { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-dim); transform: translate(-50%,-50%); }
+  .node-dot.hot { background: var(--accent); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .node-dot.base {
+    width: 12px; height: 12px; background: var(--warn);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 18%, transparent);
+  }
+  .node-lbl { position: absolute; transform: translate(-50%, 8px); font-family: var(--mono); font-size: 9.5px; color: var(--muted); letter-spacing: .05em; }
+  .map .scale { position: absolute; right: 10px; bottom: 8px; font-family: var(--mono); font-size: 10px; color: var(--faint); }
+
+  /* ---------- node table ---------- */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--faint); text-align: left; padding: 7px 14px; border-bottom: 1px solid var(--line-soft); font-weight: 500;
+  }
+  td { padding: 7px 14px; border-bottom: 1px solid var(--line-soft); font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td .nm { color: var(--accent); font-weight: 700; }
+  td.dim { color: var(--muted); }
+  .batt { display: inline-flex; align-items: center; gap: 6px; }
+  .batt .bar { width: 34px; height: 6px; background: var(--line-soft); border-radius: 1px; overflow: hidden; }
+  .batt .bar i { display: block; height: 100%; background: var(--accent); }
+  .batt.low .bar i { background: var(--crit); }
+  .batt.mid .bar i { background: var(--warn); }
+  .sig { color: var(--accent); } .sig.mid { color: var(--warn); } .sig.low { color: var(--crit); }
+
+  /* ---------- images ---------- */
+  .imgs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 14px; }
+  .imgs-wide { grid-template-columns: repeat(6, 1fr); }
+  @media (max-width: 900px) { .imgs-wide { grid-template-columns: repeat(3, 1fr); } }
+  .shot { aspect-ratio: 1; border: 1px solid var(--line); border-radius: 2px; position: relative; overflow: hidden; }
+  .shot .cap {
+    position: absolute; inset: auto 0 0 0; padding: 4px 7px;
+    font-family: var(--mono); font-size: 9.5px; color: var(--muted);
+    background: color-mix(in srgb, var(--bg) 82%, transparent); letter-spacing: .03em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .g1 { background: radial-gradient(circle at 30% 35%, #2E8A63 0%, #16241D 60%, #0F1613 100%); }
+  .g2 { background: radial-gradient(circle at 65% 25%, #4A6FA0 0%, #1A2230 55%, #0F1613 100%); }
+  .g3 { background: radial-gradient(circle at 45% 70%, #A0743A 0%, #2A2016 55%, #0F1613 100%); }
+
+  /* ---------- log ---------- */
+  .log { font-family: var(--mono); font-size: 12px; max-height: 190px; overflow-y: auto; }
+  .log .row { display: flex; gap: 12px; padding: 5px 14px; border-bottom: 1px solid var(--line-soft); }
+  .log .row:last-child { border-bottom: 0; }
+  .log .ts { color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .log .kind { width: 52px; flex: none; letter-spacing: .08em; font-size: 10.5px; text-transform: uppercase; padding-top: 1px; }
+  .k-mesh { color: var(--accent); } .k-ai { color: var(--ai); } .k-sys { color: var(--muted); } .k-tx { color: var(--warn); }
+  .log .txt { color: var(--text); overflow-wrap: anywhere; }
+  .log .txt.dim { color: var(--muted); }
+
+  footer { font-family: var(--mono); font-size: 10.5px; color: var(--faint); letter-spacing: .08em; text-align: center; padding: 4px 0 10px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="brand"><b>MESH BASE — RZRB</b><span>NOMAD · aibox · 192.168.1.197</span></div>
+    <span class="badge-live"><span class="dot"></span>LIVE — BRIDGE HEARD 12s AGO</span>
+    <div class="hdr-right">
+      <span class="chan">CH0 LongFast</span>
+      <span>2026-07-06&nbsp;10:42:07</span>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><span class="k">Nodes heard</span><span class="v">208</span><span class="sub"><span class="up">31 direct</span> · rest via hops</span></div>
+    <div class="stat"><span class="k">Messages · 24h</span><span class="v">46</span><span class="sub">39 in · 7 out</span></div>
+    <div class="stat"><span class="k">AI queries · 24h</span><span class="v">11</span><span class="sub">3 image requests</span></div>
+    <div class="stat"><span class="k">Node snapshot</span><span class="v">31<small>s ago</small></span><span class="sub">refreshes every 60s</span></div>
+    <div class="stat"><span class="k">Radio link</span><span class="v up">OK</span><span class="sub">tcp :4403 · single client</span></div>
+  </div>
+
+  <div class="grid">
+    <!-- LEFT: feed + send -->
+    <div class="col">
+      <section class="panel">
+        <div class="panel-h"><span class="t">Message feed</span><span class="n">all channels · newest last</span></div>
+        <div class="feed">
+          <div class="msg in"><span class="ts">09:58</span><div class="body"><span class="who">GRDN</span><span class="tags"></span><div class="txt">anyone else lose power on the north side this morning?</div></div></div>
+          <div class="msg in"><span class="ts">10:01</span><div class="body"><span class="who">K4XR-7</span><div class="txt">still up here. gen kicked in around 6</div></div></div>
+          <div class="msg in aiMsg"><span class="ts">10:04</span><div class="body"><span class="who">MTNS</span><span class="tags"><span class="tag ai">@ai</span></span><div class="txt">@ai what's the treatment for a copperhead bite while hiking?</div></div></div>
+          <div class="msg out aiMsg"><span class="ts">10:04</span><div class="body"><span class="who">RZRB → MTNS</span><span class="tags"><span class="tag out">out</span><span class="tag ai">ai</span></span><div class="txt">Keep the victim calm and still, remove rings/tight items, keep the bite below heart level. Do NOT cut, suck, ice, or tourniquet. Evacuate to medical care — antivenom is the only treatment. (1/2)</div></div></div>
+          <div class="msg in"><span class="ts">10:17</span><div class="body"><span class="who">FRRY</span><span class="tags"><span class="tag dm">dm</span></span><div class="txt">you coming by saturday? bringing the antennas</div></div></div>
+          <div class="msg out"><span class="ts">10:19</span><div class="body"><span class="who">RZRB → FRRY</span><span class="tags"><span class="tag out">out</span><span class="tag dm">dm</span></span><div class="txt">yes — after 2pm. bring the N-connectors too</div></div></div>
+          <div class="msg in aiMsg"><span class="ts">10:31</span><div class="body"><span class="who">HWK2</span><span class="tags"><span class="tag ai">@ai</span></span><div class="txt">@ai generate image: red-tailed hawk over a ridgeline at dusk</div></div></div>
+          <div class="msg out aiMsg"><span class="ts">10:33</span><div class="body"><span class="who">RZRB → HWK2</span><span class="tags"><span class="tag out">out</span><span class="tag ai">ai</span></span><div class="txt">Image generated — view at base gallery: hawk-ridgeline-dusk.png</div></div></div>
+          <div class="msg in"><span class="ts">10:40</span><div class="body"><span class="who">PINE</span><div class="txt">copy that GRDN, crews are on Hwy 9 now</div></div></div>
+        </div>
+        <form class="send" onsubmit="return false;">
+          <select aria-label="Channel"><option>CH0 · LongFast</option><option>CH1 · Private</option></select>
+          <select aria-label="Send to"><option>Broadcast</option><option>DM: FRRY</option><option>DM: MTNS</option><option>DM: K4XR-7</option></select>
+          <input type="text" maxlength="200" placeholder="Message to the mesh…" aria-label="Message text" />
+          <span class="count">0/200</span>
+          <button type="submit">SEND</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- RIGHT: nodes + images -->
+    <div class="col">
+      <section class="panel">
+        <div class="panel-h">
+          <span class="t">Mesh nodes</span><span class="n">208 heard · 60s refresh</span>
+          <span class="right">
+            <button class="tab" aria-pressed="true">Map</button>
+            <button class="tab" aria-pressed="false">Table</button>
+          </span>
+        </div>
+        <div class="map" role="img" aria-label="Node position map: RZRB base station at center, neighbor nodes plotted around it">
+          <span class="node-dot base" style="left:48%; top:52%;"></span><span class="node-lbl" style="left:48%; top:52%;">RZRB</span>
+          <span class="node-dot hot" style="left:30%; top:34%;"></span><span class="node-lbl" style="left:30%; top:34%;">K4XR-7</span>
+          <span class="node-dot hot" style="left:66%; top:28%;"></span><span class="node-lbl" style="left:66%; top:28%;">MTNS</span>
+          <span class="node-dot hot" style="left:73%; top:62%;"></span><span class="node-lbl" style="left:73%; top:62%;">FRRY</span>
+          <span class="node-dot" style="left:18%; top:60%;"></span><span class="node-lbl" style="left:18%; top:60%;">GRDN</span>
+          <span class="node-dot" style="left:57%; top:78%;"></span><span class="node-lbl" style="left:57%; top:78%;">PINE</span>
+          <span class="node-dot" style="left:40%; top:16%;"></span>
+          <span class="node-dot" style="left:84%; top:40%;"></span>
+          <span class="node-dot" style="left:12%; top:22%;"></span>
+          <span class="node-dot" style="left:88%; top:80%;"></span>
+          <span class="node-dot" style="left:25%; top:82%;"></span>
+          <span class="scale">2 km ▬▬</span>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Node</th><th>Battery</th><th>Signal</th><th>Hops</th><th>Last heard</th></tr></thead>
+            <tbody>
+              <tr><td><span class="nm">K4XR-7</span></td><td><span class="batt"><span class="bar"><i style="width:86%"></i></span>86%</span></td><td class="sig">Strong</td><td>0</td><td class="dim">2m ago</td></tr>
+              <tr><td><span class="nm">MTNS</span></td><td><span class="batt mid"><span class="bar"><i style="width:54%"></i></span>54%</span></td><td class="sig mid">Fair</td><td>1</td><td class="dim">8m ago</td></tr>
+              <tr><td><span class="nm">FRRY</span></td><td><span class="batt"><span class="bar"><i style="width:92%"></i></span>92%</span></td><td class="sig">Strong</td><td>0</td><td class="dim">23m ago</td></tr>
+              <tr><td><span class="nm">GRDN</span></td><td><span class="batt low"><span class="bar"><i style="width:18%"></i></span>18%</span></td><td class="sig low">Weak</td><td>2</td><td class="dim">44m ago</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- BOTTOM: combined log -->
+  <section class="panel">
+    <div class="panel-h"><span class="t">Combined log</span><span class="n">mesh · ai · system</span></div>
+    <div class="log">
+      <div class="row"><span class="ts">10:41:32</span><span class="kind k-sys">sys</span><span class="txt dim">node snapshot complete — 208 nodes, 31 direct</span></div>
+      <div class="row"><span class="ts">10:40:12</span><span class="kind k-mesh">mesh</span><span class="txt">PINE → CH0: copy that GRDN, crews are on Hwy 9 now</span></div>
+      <div class="row"><span class="ts">10:33:51</span><span class="kind k-tx">tx</span><span class="txt">RZRB → HWK2 (dm): Image generated — hawk-ridgeline-dusk.png</span></div>
+      <div class="row"><span class="ts">10:33:47</span><span class="kind k-ai">ai</span><span class="txt dim">image request → SwarmUI (flux1-schnell, 4 steps) — 21s</span></div>
+      <div class="row"><span class="ts">10:31:09</span><span class="kind k-mesh">mesh</span><span class="txt">HWK2 → CH0: @ai generate image: red-tailed hawk over a ridgeline at dusk</span></div>
+      <div class="row"><span class="ts">10:04:44</span><span class="kind k-ai">ai</span><span class="txt dim">query answered via nomad-brain (5090) — 2 message parts</span></div>
+      <div class="row"><span class="ts">09:00:03</span><span class="kind k-sys">sys</span><span class="txt dim">bridge v6 healthy — WAL ok, send API ok, radio tcp :4403 connected</span></div>
+    </div>
+  </section>
+
+  <!-- AI images: full width, below the log -->
+  <section class="panel">
+    <div class="panel-h"><span class="t">AI images</span><span class="n">gallery :8600</span></div>
+    <div class="imgs imgs-wide">
+      <div class="shot g1"><span class="cap">hawk-ridgeline-dusk</span></div>
+      <div class="shot g2"><span class="cap">storm-front-radar</span></div>
+      <div class="shot g3"><span class="cap">campsite-layout-v2</span></div>
+      <div class="shot g2" style="filter:hue-rotate(40deg)"><span class="cap">trail-map-sketch</span></div>
+      <div class="shot g1" style="filter:hue-rotate(-30deg)"><span class="cap">solar-array-diagram</span></div>
+      <div class="shot g3" style="filter:hue-rotate(20deg)"><span class="cap">creek-crossing</span></div>
+    </div>
+  </section>
+
+  <footer>MOCKUP — DESIGN PREVIEW ONLY · NOMAD MESH DASHBOARD v1 · SPEC 2026-07-06</footer>
+</div>
