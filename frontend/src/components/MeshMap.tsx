@@ -2,15 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
-import { isOffline, deviceType, roleLabel, fetchNeighbors } from "../api";
+import { ago, isOffline, deviceType, roleLabel, fetchNeighbors } from "../api";
 import type { Node, NeighborLink } from "../api";
 
 // Register the pmtiles:// protocol once at module load so MapLibre can pull
 // vector tiles directly out of the offline PMTiles archive via HTTP range reads.
 const pmtilesProtocol = new Protocol();
 maplibregl.addProtocol("pmtiles", pmtilesProtocol.tile);
-
-const ago = (ts: number | null) => ts == null ? "—" : `${Math.max(0, Math.round((Date.now() / 1000 - ts) / 60))}m ago`;
 
 const FLORIDA_CENTER: [number, number] = [-82.4, 27.9];
 const NODES_SOURCE = "nodes";
@@ -114,8 +112,8 @@ function fitToPositioned(map: maplibregl.Map, nodes: Node[]) {
 
 // The command-center hero: an always-mounted offline map of the mesh.
 // Extracted from Nodes.tsx — same lifecycle guards, minus the map/table toggle.
-export function MeshMap({ nodes, stale, showOffline, onOpenDetail }: {
-  nodes: Node[]; stale?: boolean; showOffline: boolean; onOpenDetail: (id: string) => void;
+export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDetail }: {
+  nodes: Node[]; stale?: boolean; showOffline: boolean; onToggleOffline: () => void; onOpenDetail: (id: string) => void;
 }) {
   const [mapReady, setMapReady] = useState(false);
   const [showLinks, setShowLinks] = useState(false);
@@ -282,6 +280,7 @@ export function MeshMap({ nodes, stale, showOffline, onOpenDetail }: {
         <span className="t">Mesh map</span><span className="n">{positioned.length} nodes positioned · offline basemap</span>
         {stale && <span className="tag stale">STALE</span>}
         <span className="right">
+          <label className="offl"><input type="checkbox" checked={showOffline} onChange={onToggleOffline} /> offline</label>
           <button className="tab" onClick={refit} title="Refit map to all nodes">FIT</button>
           <button className="tab" aria-pressed={showLinks} onClick={() => setShowLinks(v => !v)} title="Show neighbor links">Links</button>
         </span>

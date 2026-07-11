@@ -25,7 +25,7 @@ export default function App() {
       <Header status={status.data} unreachable={status.stale} />
       <Vitals status={status.data} stats={stats.data} nodes={nodes.data?.items ?? []} />
       <div className="cmd-grid">
-        <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onOpenDetail={setDetailNode} />
+        <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)} onOpenDetail={setDetailNode} />
         <div className="chat-rail">
           <Feed
             items={feed.data?.items ?? []} nodes={nodes.data?.items ?? []} stale={feed.stale}

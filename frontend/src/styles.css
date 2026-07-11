@@ -181,7 +181,7 @@ header {
 .map-hero-body { position: relative; flex: 1; min-height: 520px; }
 .map-hero-body .map { position: absolute; inset: 0; height: auto; background: var(--panel-2); }
 @media (max-width: 1100px) { .map-hero-body { min-height: 380px; } }
-@media (max-width: 600px)  { .map-hero-body { min-height: 300px; } }
+@media (max-width: 600px)  { .map-hero-body { min-height: 340px; } }  /* mobile-QA floor: taller, more usable map on phones */
 
 /* ---------- map ---------- */
 .map { position: relative; height: 280px; background: var(--panel-2); }

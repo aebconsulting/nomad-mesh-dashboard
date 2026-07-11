@@ -25,6 +25,10 @@ export interface NeighborLink {
 }
 
 export const OFFLINE_SECS = 7200; // 2 hours
+export const STALE_SECS = 300;    // node-snapshot age that means "bridge data stopped"
+
+/** Shared "Nm ago" formatter for last-heard style timestamps. */
+export const ago = (ts: number | null) => ts == null ? "—" : `${Math.max(0, Math.round((Date.now() / 1000 - ts) / 60))}m ago`;
 export function isOffline(n: Node): boolean {
   return n.last_heard == null || (Date.now() / 1000 - n.last_heard) > OFFLINE_SECS;
 }

@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { isOffline, deviceType, roleLabel } from "../api";
+import { ago, isOffline, deviceType, roleLabel } from "../api";
 import type { Node } from "../api";
 
-const ago = (ts: number | null) => ts == null ? "—" : `${Math.max(0, Math.round((Date.now() / 1000 - ts) / 60))}m ago`;
 const battClass = (b: number | null) => b == null ? "" : b < 25 ? "low" : b < 60 ? "mid" : "";
 const sig = (snr: number | null) => snr == null ? ["—", ""] : snr > 5 ? ["Strong", ""] : snr > -5 ? ["Fair", "mid"] : ["Weak", "low"];
 

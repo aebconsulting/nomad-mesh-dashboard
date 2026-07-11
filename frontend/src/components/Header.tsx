@@ -1,3 +1,4 @@
+import { STALE_SECS } from "../api";
 import type { Status } from "../api";
 
 export function Header({ status, unreachable }: { status: Status | null; unreachable: boolean }) {
@@ -16,7 +17,7 @@ export function Header({ status, unreachable }: { status: Status | null; unreach
   } else if (nodeAge == null) {
     level = "crit";
     label = "STALE — no node data yet";
-  } else if (nodeAge > 300) {
+  } else if (nodeAge > STALE_SECS) {
     level = "crit";
     label = `STALE — no bridge data for ${Math.round(nodeAge / 60)}m`;
   } else if (!status?.ok) {
@@ -32,6 +33,7 @@ export function Header({ status, unreachable }: { status: Status | null; unreach
       <div className="brand"><b>MERIDIAN</b><span>mesh command center · {status?.bridge?.node ?? "RZRB"} · aibox</span></div>
       <span className={`badge-live lvl-${level}`}><span className="dot" />{label}</span>
       <div className="hdr-right">
+        {/* Hostname becomes env-driven with Phase 3’s MESHMONITOR_API_URL; LAN DNS serves both this app and MeshMonitor today. */}
         <a className="tab ext" href="https://meshmonitor.meshnomad.ai" target="_blank" rel="noopener noreferrer" title="Radio owner UI — config, channels, packet admin">MeshMonitor ↗</a>
         <span>{new Date().toLocaleString()}</span>
       </div>
