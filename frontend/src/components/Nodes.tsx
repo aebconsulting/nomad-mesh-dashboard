@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
-import { isOffline, deviceType, roleLabel } from "../api";
-import type { Node } from "../api";
+import { isOffline, deviceType, roleLabel, fetchNeighbors } from "../api";
+import type { Node, NeighborLink } from "../api";
 
 // Register the pmtiles:// protocol once at module load so MapLibre can pull
 // vector tiles directly out of the offline PMTiles archive via HTTP range reads.
@@ -41,6 +41,22 @@ function cmpNodes(a: Node, b: Node, key: SortKey, dir: 1 | -1): number {
 const FLORIDA_CENTER: [number, number] = [-82.4, 27.9];
 const NODES_SOURCE = "nodes";
 const NODES_LAYER = "nodes";
+const LINKS_SOURCE = "links";
+const LINKS_LAYER = "mesh-links";
+
+// Color-codes each edge by SNR so weak links (likely to drop) stand out from
+// strong ones at a glance; a missing snr (older bridge payloads) gets a
+// neutral dim-green rather than defaulting to "weak". "==" against null is
+// used (rather than ">="/"has") because MapLibre's comparison operators are
+// strictly typed and null-safe only under "==" — a numeric ">=" on a null
+// "get" result throws at render time instead of falling through.
+const LINK_COLOR_EXPR: maplibregl.ExpressionSpecification = [
+  "case",
+  ["==", ["get", "snr"], null], "#2E8A63",
+  [">=", ["get", "snr"], 5], "#52E5A3",
+  [">=", ["get", "snr"], -5], "#E3B34F",
+  "#E06056",
+];
 
 type NodeProps = {
   node_id: string; label: string; battery: number | null; ago: string;
@@ -94,6 +110,19 @@ function toFeatureCollection(nodes: Node[]): GeoJSON.FeatureCollection<GeoJSON.P
   };
 }
 
+// Builds one LineString feature per directed neighbor edge, carrying only the
+// snr the line-color expression needs.
+function toLinkFeatureCollection(links: NeighborLink[]): GeoJSON.FeatureCollection<GeoJSON.LineString, { snr: number | null }> {
+  return {
+    type: "FeatureCollection",
+    features: links.map((l): GeoJSON.Feature<GeoJSON.LineString, { snr: number | null }> => ({
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: [[l.from_lon, l.from_lat], [l.to_lon, l.to_lat]] },
+      properties: { snr: l.snr },
+    })),
+  };
+}
+
 // Fits the map to all positioned nodes (or resets to the initial Florida view
 // when none are positioned). fitBounds/jumpTo are programmatic camera moves —
 // they fire "movestart" WITHOUT an originalEvent, so they never trip the
@@ -115,6 +144,7 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
   const [view, setView] = useState<"map" | "table">("map");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "last_heard", dir: -1 });
   const [mapReady, setMapReady] = useState(false);
+  const [showLinks, setShowLinks] = useState(false);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const divRef = useRef<HTMLDivElement | null>(null);
   const userMovedRef = useRef(false);       // user has panned/zoomed -> stop auto-refitting
@@ -172,6 +202,20 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
             "circle-stroke-width": 1,
           },
         });
+        // Neighbor-link edges live on their own source/layer, inserted BEFORE the
+        // node layer in the stack (beforeId) so edges render under the node dots
+        // rather than obscuring them. Empty until the Links toggle + poll fill it.
+        map.addSource(LINKS_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+        map.addLayer({
+          id: LINKS_LAYER,
+          type: "line",
+          source: LINKS_SOURCE,
+          paint: {
+            "line-width": 1.5,
+            "line-opacity": 0.5,
+            "line-color": LINK_COLOR_EXPR,
+          },
+        }, NODES_LAYER);
         map.on("mouseenter", NODES_LAYER, (e) => {
           map!.getCanvas().style.cursor = "pointer";
           const f = e.features?.[0] as NodeFeature | undefined;
@@ -230,6 +274,33 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
     prevCountRef.current = positioned.length;
   }, [view, items, showOffline, mapReady]);
 
+  // Draws/clears the neighbor-link overlay. Independent of the node-refresh
+  // effect above (own source, own poll cadence). The "links" source is only
+  // created inside the map's "load" handler above, so this effect may run
+  // BEFORE it exists (map still loading style) — every step no-ops on a
+  // missing source rather than throwing, and the `mapReady` dep re-runs this
+  // effect once the source is actually there.
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource(LINKS_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (view !== "map" || !showLinks) {
+      src?.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+    if (!src) return; // source not ready yet; mapReady flipping true will retry
+    let cancelled = false;
+    const load = () => {
+      fetchNeighbors().then(({ items }) => {
+        if (cancelled) return;
+        const s = mapRef.current?.getSource(LINKS_SOURCE) as maplibregl.GeoJSONSource | undefined;
+        s?.setData(toLinkFeatureCollection(items));
+      }).catch(() => { /* transient fetch failure — leave last-good links on screen */ });
+    };
+    load();
+    const id = setInterval(load, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [view, showLinks, mapReady]);
+
   // Manual escape hatch: clear the "user moved" flag and refit to all markers.
   const refit = () => {
     const map = mapRef.current;
@@ -246,6 +317,7 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
         <span className="right">
           <label className="offl"><input type="checkbox" checked={showOffline} onChange={onToggleOffline} /> offline</label>
           {view === "map" && <button className="tab" onClick={refit} title="Refit map to all nodes">FIT</button>}
+          {view === "map" && <button className="tab" aria-pressed={showLinks} onClick={() => setShowLinks(v => !v)} title="Show neighbor links">Links</button>}
           <button className="tab" aria-pressed={view === "map"} onClick={() => setView("map")}>Map</button>
           <button className="tab" aria-pressed={view === "table"} onClick={() => setView("table")}>Table</button>
         </span>

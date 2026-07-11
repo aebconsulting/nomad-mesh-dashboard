@@ -14,6 +14,10 @@ STATIC_DIR = os.environ.get("STATIC_DIR", os.path.join(os.path.dirname(__file__)
 # Offline vector basemap (NOMAD's downloaded Protomaps data, mounted read-only).
 MAPS_DIR = os.environ.get("MAPS_DIR", "/maps-data")
 BASEMAP_PMTILES = os.environ.get("BASEMAP_PMTILES", "20260704.pmtiles")
+# The base station's node id (e.g. "!849b87e4"). When set, /api/neighbors derives the
+# base's direct-neighbor edges from nodes.hops==0 (reliable + immediate), on top of any
+# links captured in the neighbors table.
+BASE_NODE_ID = os.environ.get("BASE_NODE_ID", "")
 FEED_CAP = 500
 IMG_RE = re.compile(r"^[A-Za-z0-9._-]+\.(png|jpe?g|webp|gif)$")
 DEST_RE = re.compile(r"^![0-9a-fA-F]{8}$")
@@ -121,6 +125,40 @@ def node_detail(node_id: str):
     weather = q("SELECT ts, temperature, humidity, pressure FROM env_log WHERE node_id = ? "
                 "ORDER BY ts DESC LIMIT 24", (node_id,))
     return {"node": node[0], "telemetry": grouped, "weather": weather}
+
+@app.get("/api/neighbors")
+def neighbors_links(since: float = 0.0):
+    """Directed neighbor links (who hears whom) for the topology overlay: the latest
+    edge per (node, neighbor) pair, joined to node positions/names. Only edges where
+    BOTH endpoints have a position are returned (they're drawn on the map). `since`
+    defaults to the last 24h so links a node stops reporting age out."""
+    window = since if since > 0 else (time.time() - 86400)
+    table_edges = q(
+        "SELECT e.node_id AS from_id, n1.short_name AS from_name, n1.lat AS from_lat, n1.lon AS from_lon, "
+        "e.neighbor_id AS to_id, n2.short_name AS to_name, n2.lat AS to_lat, n2.lon AS to_lon, "
+        "e.snr, e.ts "
+        "FROM (SELECT node_id, neighbor_id, snr, ts, "
+        "             ROW_NUMBER() OVER (PARTITION BY node_id, neighbor_id ORDER BY ts DESC) rn "
+        "      FROM neighbors WHERE ts > ?) e "
+        "JOIN nodes n1 ON n1.node_id = e.node_id "
+        "JOIN nodes n2 ON n2.node_id = e.neighbor_id "
+        "WHERE e.rn = 1 AND n1.lat IS NOT NULL AND n2.lat IS NOT NULL", (window,))
+    # Derived direct-neighbor edges: the base hears every hops==0 node directly, so draw
+    # base -> node with the base's receive SNR (nodes.snr). Reliable + immediate, so the
+    # topology shows the base's star now, before NEIGHBORINFO/per-packet capture fills in.
+    derived = []
+    if BASE_NODE_ID:
+        derived = q(
+            "SELECT b.node_id AS from_id, b.short_name AS from_name, b.lat AS from_lat, b.lon AS from_lon, "
+            "n.node_id AS to_id, n.short_name AS to_name, n.lat AS to_lat, n.lon AS to_lon, "
+            "n.snr, n.last_heard AS ts "
+            "FROM nodes b JOIN nodes n ON n.hops = 0 AND n.node_id != b.node_id AND n.lat IS NOT NULL "
+            "WHERE b.node_id = ? AND b.lat IS NOT NULL", (BASE_NODE_ID,))
+    # Explicit neighbors-table edges win over the derived star for the same pair.
+    merged = {(e["from_id"], e["to_id"]): e for e in derived}
+    for e in table_edges:
+        merged[(e["from_id"], e["to_id"])] = e
+    return {"items": list(merged.values())}
 
 @app.get("/api/stats")
 def stats():

@@ -18,6 +18,11 @@ export interface NodeDetail {
   telemetry: Record<string, TelemetryPoint[]>;
   weather: WeatherPoint[];
 }
+export interface NeighborLink {
+  from_id: string; from_name: string | null; from_lat: number; from_lon: number;
+  to_id: string; to_name: string | null; to_lat: number; to_lon: number;
+  snr: number | null; ts: number;
+}
 
 export const OFFLINE_SECS = 7200; // 2 hours
 export function isOffline(n: Node): boolean {
@@ -68,6 +73,7 @@ export const fetchImages = () => get<{ items: Img[]; mounted: boolean }>("/api/i
 export const fetchStatus = () => get<Status>("/api/status");
 export const fetchStats = () => get<Stats>("/api/stats");
 export const fetchNodeDetail = (id: string) => get<NodeDetail>(`/api/nodes/${encodeURIComponent(id)}/detail`);
+export const fetchNeighbors = () => get<{ items: NeighborLink[] }>("/api/neighbors");
 
 export async function sendMessage(text: string, channel: number, to: string | null): Promise<void> {
   const r = await fetch("/api/send", {
