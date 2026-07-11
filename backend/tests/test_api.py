@@ -6,13 +6,24 @@ from fastapi.testclient import TestClient
 CSRF_HEADERS = {"X-Mesh-Dashboard": "1"}
 
 def make_db(path):
+    # Schema mirrors the live bridge memory.db (v9): full nodes columns plus the
+    # env_log / telemetry / neighbors tables the API reads.
     c = sqlite3.connect(path)
     c.execute("CREATE TABLE msg_log(id INTEGER PRIMARY KEY, ts REAL, direction TEXT, node_id TEXT, node_name TEXT, channel INTEGER, is_dm INTEGER, is_ai INTEGER, text TEXT)")
-    c.execute("CREATE TABLE nodes(node_id TEXT PRIMARY KEY, short_name TEXT, long_name TEXT, lat REAL, lon REAL, battery INTEGER, snr REAL, hops INTEGER, last_heard REAL, updated REAL)")
+    c.execute("CREATE TABLE nodes(node_id TEXT PRIMARY KEY, short_name TEXT, long_name TEXT, lat REAL, lon REAL, battery INTEGER, snr REAL, hops INTEGER, last_heard REAL, updated REAL, "
+              "hw_model TEXT, role TEXT, altitude REAL, voltage REAL, chan_util REAL, air_util_tx REAL, uptime_s INTEGER, rssi REAL, via_mqtt INTEGER, sats INTEGER, loc_source TEXT)")
+    c.execute("CREATE TABLE env_log(id INTEGER PRIMARY KEY, ts REAL, node_id TEXT, node_name TEXT, temperature REAL, humidity REAL, pressure REAL, lat REAL, lon REAL)")
+    c.execute("CREATE TABLE telemetry(id INTEGER PRIMARY KEY, ts REAL, node_id TEXT, node_name TEXT, kind TEXT, metric TEXT, value REAL)")
+    c.execute("CREATE TABLE neighbors(id INTEGER PRIMARY KEY, ts REAL, node_id TEXT, neighbor_id TEXT, snr REAL)")
     now = time.time()
     c.execute("INSERT INTO msg_log(ts,direction,node_id,node_name,channel,is_dm,is_ai,text) VALUES(?,?,?,?,?,?,?,?)", (now-60, "in", "!aa11bb22", "K4XR-7", 0, 0, 0, "hello"))
     c.execute("INSERT INTO msg_log(ts,direction,node_id,node_name,channel,is_dm,is_ai,text) VALUES(?,?,?,?,?,?,?,?)", (now-30, "out", "dashboard", "Dashboard", 0, 0, 0, "hi back"))
-    c.execute("INSERT INTO nodes VALUES('!aa11bb22','K4XR','K4XR-7',34.1,-84.2,86,7.5,0,?,?)", (now-120, now-31))
+    c.execute("INSERT INTO nodes(node_id,short_name,long_name,lat,lon,battery,snr,hops,last_heard,updated,hw_model,role) "
+              "VALUES('!aa11bb22','K4XR','K4XR-7',34.1,-84.2,86,7.5,0,?,?,'HELTEC_V3','CLIENT')", (now-120, now-31))
+    c.execute("INSERT INTO nodes(node_id,short_name,long_name,lat,lon,battery,snr,hops,last_heard,updated) "
+              "VALUES('!bb22cc33','RZRB','Base',34.0,-84.3,100,NULL,0,?,?)", (now-60, now-20))
+    c.execute("INSERT INTO env_log(ts,node_id,node_name,temperature,humidity,pressure) VALUES(?, '!aa11bb22', 'K4XR-7', 21.5, 40.0, 1013.2)", (now-90,))
+    c.execute("INSERT INTO neighbors(ts,node_id,neighbor_id,snr) VALUES(?, '!aa11bb22', '!bb22cc33', 6.25)", (now-45,))
     c.commit(); c.close()
 
 @pytest.fixture()
@@ -47,8 +58,32 @@ def test_feed_since_filter(client):
 def test_nodes(client):
     c, _ = client
     body = c.get("/api/nodes").json()
-    assert body["items"][0]["node_id"] == "!aa11bb22"
+    assert {i["node_id"] for i in body["items"]} == {"!aa11bb22", "!bb22cc33"}
     assert body["snapshot_ts"] is not None
+
+def test_nodes_includes_latest_weather(client):
+    c, _ = client
+    items = c.get("/api/nodes").json()["items"]
+    k4xr = next(i for i in items if i["node_id"] == "!aa11bb22")
+    assert k4xr["temperature"] == 21.5
+
+def test_neighbors_links(client):
+    c, _ = client
+    items = c.get("/api/neighbors").json()["items"]
+    assert len(items) == 1
+    edge = items[0]
+    assert (edge["from_id"], edge["to_id"], edge["snr"]) == ("!aa11bb22", "!bb22cc33", 6.25)
+    assert edge["from_lat"] == 34.1 and edge["to_lat"] == 34.0
+
+def test_neighbors_derived_base_star(client, monkeypatch):
+    # With BASE_NODE_ID set, hops==0 nodes get a derived base->node edge; the
+    # explicit neighbors-table edge for the same pair must win over the star.
+    c, m = client
+    monkeypatch.setattr(m, "BASE_NODE_ID", "!bb22cc33")
+    items = c.get("/api/neighbors").json()["items"]
+    pairs = {(e["from_id"], e["to_id"]) for e in items}
+    assert ("!bb22cc33", "!aa11bb22") in pairs, "derived star edge missing"
+    assert ("!aa11bb22", "!bb22cc33") in pairs, "explicit table edge missing"
 
 def test_images_whitelist(client):
     c, _ = client
