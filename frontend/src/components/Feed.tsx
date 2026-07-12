@@ -30,28 +30,30 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
   const [hideSelf, setHideSelf] = useState(false);
   const [hideAI, setHideAI] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const firstRef = useRef(true);
+  const stickRef = useRef(true);   // follow the newest message while pinned to the bottom
 
   const chrono = [...items].reverse(); // API is newest-first; feed reads top→bottom oldest→newest
   const shown = chrono.filter(m => !(hideSelf && isSelf(m)) && !(hideAI && isAI(m)));
 
-  // Follow new messages to the bottom, but only when the user is already
-  // near the bottom — someone scrolled up to read history shouldn't get yanked.
-  // The feed stays MOUNTED across the analyst tab (hidden via CSS, not
-  // unmounted) so scroll position, the one-time pin, and a half-typed draft
-  // all survive a round trip to the analyst.
-  useEffect(() => {
+  // The user scrolling toggles "stick": at/near the bottom keeps following new
+  // messages; scrolling up to read history stops the follow so they aren't yanked.
+  const onFeedScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    if (firstRef.current) {
-      if (items.length === 0) return;   // wait for the first real data before pinning to bottom
-      el.scrollTop = el.scrollHeight;
-      firstRef.current = false;
-      return;
-    }
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
-  }, [items]);
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  };
+
+  // Keep the newest message in view — on new data AND when the feed tab becomes
+  // visible again. Guarded to the visible feed: while the analyst tab is up the
+  // feed is display:none (its scroll metrics all read 0), and measuring then
+  // would strand scrollTop at 0 and silently kill auto-follow. The feed + send
+  // box stay MOUNTED across tabs (hidden via CSS) so scroll and drafts survive.
+  useEffect(() => {
+    if (tab !== "feed") return;
+    const el = scrollRef.current;
+    if (!el) return;
+    if (stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [items, tab]);
 
   return (
     <section className="panel">
@@ -70,7 +72,7 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
           feed + send box stay mounted always, toggled with `hidden`, so the
           list scroll and any draft persist across tab switches. */}
       {tab === "analyst" && <Assistant />}
-      <div className="feed" ref={scrollRef} hidden={tab !== "feed"}>
+      <div className="feed" ref={scrollRef} onScroll={onFeedScroll} hidden={tab !== "feed"}>
         {shown.length === 0 && <div className="empty">No messages yet — the mesh is quiet.</div>}
         {shown.map(m => (
           <div key={m.id} className={`msg ${m.direction} ${m.is_ai ? "aiMsg" : ""}`}>
