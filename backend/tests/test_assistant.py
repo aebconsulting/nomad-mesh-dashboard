@@ -105,7 +105,7 @@ def test_assistant_requires_csrf(m):
 def test_assistant_happy(m, monkeypatch):
     class R:
         status_code = 200
-        def json(self): return {"choices": [{"message": {"content": "Router K4XR (SNR 7) is your best bet."}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 300}}
+        def json(self): return {"message": {"content": "Router K4XR (SNR 7) is your best bet."}, "done_reason": "stop"}
     monkeypatch.setattr(m.httpx, "post", lambda *a, **k: R())
     r = TestClient(m.app).post("/api/assistant", json={"question": "which router?"}, headers=CSRF)
     assert r.status_code == 200
@@ -114,7 +114,7 @@ def test_assistant_happy(m, monkeypatch):
 def test_assistant_strips_think_tags(m, monkeypatch):
     class R:
         status_code = 200
-        def json(self): return {"choices": [{"message": {"content": "<think>hmm</think>Use K4XR."}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 10}}
+        def json(self): return {"message": {"content": "<think>hmm</think>Use K4XR."}, "done_reason": "stop"}
     monkeypatch.setattr(m.httpx, "post", lambda *a, **k: R())
     r = TestClient(m.app).post("/api/assistant", json={"question": "x"}, headers=CSRF)
     assert r.json()["answer"] == "Use K4XR."
@@ -122,7 +122,7 @@ def test_assistant_strips_think_tags(m, monkeypatch):
 def test_assistant_empty_answer_is_502(m, monkeypatch):
     class R:
         status_code = 200
-        def json(self): return {"choices": [{"message": {"content": "   "}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 10}}
+        def json(self): return {"message": {"content": "   "}, "done_reason": "stop"}
     monkeypatch.setattr(m.httpx, "post", lambda *a, **k: R())
     assert TestClient(m.app).post("/api/assistant", json={"question": "x"}, headers=CSRF).status_code == 502
 
@@ -146,10 +146,34 @@ def test_assistant_busy_returns_429(m, monkeypatch):
     finally:
         m._analyst_lock.release()
 
+def test_assistant_rate_bucket_is_per_client(m, monkeypatch):
+    # A single client's 6/min budget must NOT 429 a different client (the bucket
+    # is keyed per client_ip, mirroring /api/send).
+    class R:
+        status_code = 200
+        def json(self): return {"message": {"content": "ok"}, "done_reason": "stop"}
+    monkeypatch.setattr(m.httpx, "post", lambda *a, **k: R())
+    # TestClient's peer is non-IP ("testclient") so XFF is ignored — exercise the
+    # dict keying directly: one key fills, another key is unaffected.
+    m._analyst_times["10.0.0.1"] = [time.time()] * 6
+    assert "10.0.0.2" not in m._analyst_times
+    r = TestClient(m.app).post("/api/assistant", json={"question": "x"}, headers=CSRF)
+    assert r.status_code == 200  # the testclient key is fresh, not blocked by 10.0.0.1
+
+def test_assistant_strips_unterminated_think(m, monkeypatch):
+    # a thinking model cut at num_predict emits "<think>..." with no close tag.
+    class R:
+        status_code = 200
+        def json(self): return {"message": {"content": "<think>still reasoning about the mesh and"}, "done_reason": "length"}
+    monkeypatch.setattr(m.httpx, "post", lambda *a, **k: R())
+    r = TestClient(m.app).post("/api/assistant", json={"question": "x"}, headers=CSRF)
+    # nothing but think content -> empty after strip -> forbidden 502, never a leak
+    assert r.status_code == 502
+
 def test_assistant_reports_truncation(m, monkeypatch):
     class R:
         status_code = 200
-        def json(self): return {"choices": [{"message": {"content": "long answer cut"}, "finish_reason": "length"}], "usage": {"prompt_tokens": 10}}
+        def json(self): return {"message": {"content": "long answer cut"}, "done_reason": "length"}
     monkeypatch.setattr(m.httpx, "post", lambda *a, **k: R())
     assert TestClient(m.app).post("/api/assistant", json={"question": "x"}, headers=CSRF).json()["truncated"] is True
 

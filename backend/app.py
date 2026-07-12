@@ -61,8 +61,9 @@ app = FastAPI(title="NOMAD Mesh Dashboard", docs_url=None, redoc_url=None)
 async def _csp(request: Request, call_next):
     resp = await call_next(request)
     resp.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'")
+        "default-src 'self'; script-src 'self'; worker-src 'self' blob:; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+        "connect-src 'self'; object-src 'none'; base-uri 'none'")
     return resp
 
 def q(sql, args=()):
@@ -373,11 +374,13 @@ def send(body: SendReq, request: Request):
 # Advisory-only: reads a PUBLIC-ONLY context pack from memory.db and asks the
 # same aibox-local LLM the mesh @ai uses. No path to /api/send, no tool-calling,
 # never persists Q&A. Its safety is capability + data scope, not string filtering.
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://172.17.0.1:11434/v1").rstrip("/")
+# Native Ollama base (NOT /v1): /api/chat honors options.num_ctx; the OpenAI-
+# compat /v1 path silently ignores it, letting a big pack head-truncate unseen.
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://172.17.0.1:11434").rstrip("/")
 ANALYST_MODEL = os.environ.get("ANALYST_MODEL", "hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_M")
 ANALYST_NUM_CTX = int(os.environ.get("ANALYST_NUM_CTX", "8192"))
 _analyst_lock = threading.Lock()               # concurrency=1: never starve the mesh @ai lifeline
-_analyst_times: list[float] = []
+_analyst_times: dict[str, list[float]] = {}    # per-client 6/min bucket (mirrors /api/send)
 _analyst_times_lock = threading.Lock()
 
 _ANALYST_SYS = (
@@ -406,8 +409,8 @@ def context_pack(question: str) -> dict:
     online = "last_heard > {}".format(now - 7200)
     agg = q("SELECT COUNT(*) n, SUM(CASE WHEN {} THEN 1 ELSE 0 END) online, "
             "MIN(snr) min_snr, AVG(snr) avg_snr FROM nodes".format(online))[0]
-    worst = q("SELECT short_name, node_id, battery FROM nodes WHERE battery IS NOT NULL "
-              "ORDER BY battery ASC LIMIT 1")
+    worst = q("SELECT short_name, node_id, battery FROM nodes WHERE battery IS NOT NULL AND {} "
+              "ORDER BY battery ASC LIMIT 1".format(online))
     routers = q("SELECT short_name, node_id, snr, hops, battery, role, last_heard FROM nodes "
                 "WHERE {} ORDER BY (hops=0) DESC, snr DESC LIMIT 40".format(online))
     total_nodes = agg["n"] or 0
@@ -450,18 +453,23 @@ def assistant(body: AssistantReq, request: Request):
         raise HTTPException(403, "missing X-Mesh-Dashboard header")
     ip = client_ip(request)
     now = time.time()
-    with _analyst_times_lock:
-        recent = [t for t in _analyst_times if now - t < 60]
-        if len(recent) >= 6:
-            _analyst_times[:] = recent
-            raise HTTPException(429, "analyst rate limited: max 6/minute")
-        recent.append(now)
-        _analyst_times[:] = recent
-    # Concurrency 1: one 30B prefill at a time so a curious dashboard can never
-    # queue the mesh @ai lifeline behind it.
+    # Concurrency 1 FIRST: one 30B prefill at a time so a curious dashboard can
+    # never queue the mesh @ai lifeline behind it. A busy-reject spends no quota.
     if not _analyst_lock.acquire(blocking=False):
         raise HTTPException(429, "analyst busy — one question at a time")
     try:
+        with _analyst_times_lock:
+            for key in list(_analyst_times.keys()):
+                kept = [t for t in _analyst_times[key] if now - t < 60]
+                if kept:
+                    _analyst_times[key] = kept
+                else:
+                    del _analyst_times[key]
+            recent = _analyst_times.get(ip, [])
+            if len(recent) >= 6:
+                raise HTTPException(429, "analyst rate limited: max 6/minute")
+            recent.append(now)
+            _analyst_times[ip] = recent
         pack = context_pack(body.question)
         messages = [
             {"role": "system", "content": _ANALYST_SYS},
@@ -469,9 +477,9 @@ def assistant(body: AssistantReq, request: Request):
                 json.dumps(pack, ensure_ascii=False), body.question)},
         ]
         try:
-            r = httpx.post(OLLAMA_URL + "/chat/completions",
+            r = httpx.post(OLLAMA_URL + "/api/chat",
                            json={"model": ANALYST_MODEL, "messages": messages, "stream": False,
-                                 "max_tokens": 400, "options": {"num_ctx": ANALYST_NUM_CTX}},
+                                 "options": {"num_ctx": ANALYST_NUM_CTX, "num_predict": 400}},
                            timeout=120)
         except httpx.TimeoutException:
             raise HTTPException(504, "analyst timed out (LLM busy or slow — shared with mesh replies)")
@@ -480,13 +488,15 @@ def assistant(body: AssistantReq, request: Request):
         if r.status_code != 200:
             raise HTTPException(502, "analyst LLM error ({})".format(r.status_code))
         j = r.json()
-        choice = (j.get("choices") or [{}])[0]
-        answer = ((choice.get("message") or {}).get("content") or "")
-        answer = re.sub(r"<think>.*?</think>", "", answer, flags=re.S).strip()
+        answer = ((j.get("message") or {}).get("content") or "")
+        # Strip completed think blocks AND a leaked unterminated one (a thinking
+        # model cut at num_predict emits "<think>...", no closing tag).
+        answer = re.sub(r"<think>.*?</think>", "", answer, flags=re.S)
+        answer = re.sub(r"<think>.*$", "", answer, flags=re.S).strip()
         if not answer:
             raise HTTPException(502, "analyst returned an empty answer")
         return {"answer": answer, "window_note": pack.get("window_note"),
-                "truncated": choice.get("finish_reason") == "length"}
+                "truncated": j.get("done_reason") == "length"}
     finally:
         _analyst_lock.release()
 

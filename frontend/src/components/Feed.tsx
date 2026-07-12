@@ -37,8 +37,10 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
 
   // Follow new messages to the bottom, but only when the user is already
   // near the bottom — someone scrolled up to read history shouldn't get yanked.
+  // The feed stays MOUNTED across the analyst tab (hidden via CSS, not
+  // unmounted) so scroll position, the one-time pin, and a half-typed draft
+  // all survive a round trip to the analyst.
   useEffect(() => {
-    if (tab !== "feed") return;
     const el = scrollRef.current;
     if (!el) return;
     if (firstRef.current) {
@@ -49,14 +51,14 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
     }
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
     if (nearBottom) el.scrollTop = el.scrollHeight;
-  }, [items, tab]);
+  }, [items]);
 
   return (
     <section className="panel">
       <div className="panel-h">
         <span className="t">{tab === "feed" ? "Message feed" : "Mesh analyst"}</span>
         <span className="n">{tab === "feed" ? "all channels · newest last" : "local · read-only"}</span>
-        {tab === "feed" && stale && <span className="tag stale">STALE</span>}
+        {stale && <span className="tag stale">STALE</span>}
         <span className="right">
           <button className="tab" aria-pressed={tab === "feed"} onClick={() => setTab("feed")}>Feed</button>
           <button className="tab" aria-pressed={tab === "analyst"} onClick={() => setTab("analyst")}>Analyst</button>
@@ -64,31 +66,31 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
           {tab === "feed" && <button className="tab" aria-pressed={!hideAI} onClick={() => setHideAI(v => !v)}>AI</button>}
         </span>
       </div>
-      {tab === "analyst" ? (
-        <Assistant />
-      ) : (
-        <>
-          <div className="feed" ref={scrollRef}>
-            {shown.length === 0 && <div className="empty">No messages yet — the mesh is quiet.</div>}
-            {shown.map(m => (
-              <div key={m.id} className={`msg ${m.direction} ${m.is_ai ? "aiMsg" : ""}`}>
-                <span className="ts">{hhmm(m.ts)}</span>
-                <div className="body">
-                  <span className="who">{m.direction === "out" ? (m.is_dm ? `RZRB → ${m.node_name}` : `RZRB → ch${m.channel}`) : m.node_name}</span>
-                  <span className="tags">
-                    {m.direction === "out" ? <span className="tag out">out</span> : null}
-                    {m.is_dm ? <span className="tag dm">dm</span> : null}
-                    {m.is_ai ? <span className="tag ai">ai</span> : null}
-                    {m.direction === "out" ? deliveryGlyph(m.ack_state) : null}
-                  </span>
-                  <div className="txt">{m.text}</div>
-                </div>
-              </div>
-            ))}
+      {/* Analyst mounts only when active (its session state is disposable). The
+          feed + send box stay mounted always, toggled with `hidden`, so the
+          list scroll and any draft persist across tab switches. */}
+      {tab === "analyst" && <Assistant />}
+      <div className="feed" ref={scrollRef} hidden={tab !== "feed"}>
+        {shown.length === 0 && <div className="empty">No messages yet — the mesh is quiet.</div>}
+        {shown.map(m => (
+          <div key={m.id} className={`msg ${m.direction} ${m.is_ai ? "aiMsg" : ""}`}>
+            <span className="ts">{hhmm(m.ts)}</span>
+            <div className="body">
+              <span className="who">{m.direction === "out" ? (m.is_dm ? `RZRB → ${m.node_name}` : `RZRB → ch${m.channel}`) : m.node_name}</span>
+              <span className="tags">
+                {m.direction === "out" ? <span className="tag out">out</span> : null}
+                {m.is_dm ? <span className="tag dm">dm</span> : null}
+                {m.is_ai ? <span className="tag ai">ai</span> : null}
+                {m.direction === "out" ? deliveryGlyph(m.ack_state) : null}
+              </span>
+              <div className="txt">{m.text}</div>
+            </div>
           </div>
-          <SendBox nodes={nodes} value={dmTarget} onChange={onDmTargetChange} showOffline={showOffline} />
-        </>
-      )}
+        ))}
+      </div>
+      <div hidden={tab !== "feed"}>
+        <SendBox nodes={nodes} value={dmTarget} onChange={onDmTargetChange} showOffline={showOffline} />
+      </div>
     </section>
   );
 }
