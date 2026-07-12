@@ -1,5 +1,5 @@
 """NOMAD Mesh Dashboard backend. Reads memory.db READ-ONLY; sends via the bridge API."""
-import ipaddress, os, re, sqlite3, threading, time
+import ipaddress, json, os, re, sqlite3, threading, time
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -80,11 +80,32 @@ def q(sql, args=()):
     finally:
         con.close()
 
+_ack_cache = None  # (value, ts) short-TTL cache so a bridge upgrade is picked up without a restart
+
+def _msg_log_has_ack():
+    """True when the bridge's delivery-tracking columns exist. Feature-detect
+    (not assume) so a dashboard newer than the bridge — or a bridge rollback —
+    degrades to 'no delivery data' instead of 500ing the whole feed."""
+    global _ack_cache
+    now = time.time()
+    if _ack_cache and now - _ack_cache[1] < 30:
+        return _ack_cache[0]
+    try:
+        cols = {r["name"] for r in q("PRAGMA table_info(msg_log)")}
+        val = "ack_state" in cols
+    except HTTPException:
+        val = False
+    _ack_cache = (val, now)
+    return val
+
 @app.get("/api/feed")
 def feed(since: float = 0.0, limit: int = Query(100, ge=1, le=FEED_CAP)):
-    rows = q("SELECT id, ts, direction, node_id, node_name, channel, is_dm, is_ai, text "
-             "FROM msg_log WHERE ts > ? ORDER BY ts DESC LIMIT ?", (since, limit))
-    return {"items": rows}
+    has_ack = _msg_log_has_ack()
+    cols = "id, ts, direction, node_id, node_name, channel, is_dm, is_ai, text" + (", ack_state" if has_ack else "")
+    rows = q("SELECT {} FROM msg_log WHERE ts > ? ORDER BY ts DESC LIMIT ?".format(cols), (since, limit))
+    for r in rows:
+        r.setdefault("ack_state", None)
+    return {"items": rows, "delivery_tracking": has_ack}
 
 @app.get("/api/log")
 def log_view(since: float = 0.0, limit: int = Query(200, ge=1, le=FEED_CAP)):

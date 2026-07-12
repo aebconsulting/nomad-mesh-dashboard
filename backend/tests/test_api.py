@@ -9,7 +9,7 @@ def make_db(path):
     # Schema mirrors the live bridge memory.db (v9): full nodes columns plus the
     # env_log / telemetry / neighbors tables the API reads.
     c = sqlite3.connect(path)
-    c.execute("CREATE TABLE msg_log(id INTEGER PRIMARY KEY, ts REAL, direction TEXT, node_id TEXT, node_name TEXT, channel INTEGER, is_dm INTEGER, is_ai INTEGER, text TEXT)")
+    c.execute("CREATE TABLE msg_log(id INTEGER PRIMARY KEY, ts REAL, direction TEXT, node_id TEXT, node_name TEXT, channel INTEGER, is_dm INTEGER, is_ai INTEGER, text TEXT, mesh_id INTEGER, ack_state TEXT)")
     c.execute("CREATE TABLE nodes(node_id TEXT PRIMARY KEY, short_name TEXT, long_name TEXT, lat REAL, lon REAL, battery INTEGER, snr REAL, hops INTEGER, last_heard REAL, updated REAL, "
               "hw_model TEXT, role TEXT, altitude REAL, voltage REAL, chan_util REAL, air_util_tx REAL, uptime_s INTEGER, rssi REAL, via_mqtt INTEGER, sats INTEGER, loc_source TEXT)")
     c.execute("CREATE TABLE env_log(id INTEGER PRIMARY KEY, ts REAL, node_id TEXT, node_name TEXT, temperature REAL, humidity REAL, pressure REAL, lat REAL, lon REAL)")
@@ -17,7 +17,7 @@ def make_db(path):
     c.execute("CREATE TABLE neighbors(id INTEGER PRIMARY KEY, ts REAL, node_id TEXT, neighbor_id TEXT, snr REAL)")
     now = time.time()
     c.execute("INSERT INTO msg_log(ts,direction,node_id,node_name,channel,is_dm,is_ai,text) VALUES(?,?,?,?,?,?,?,?)", (now-60, "in", "!aa11bb22", "K4XR-7", 0, 0, 0, "hello"))
-    c.execute("INSERT INTO msg_log(ts,direction,node_id,node_name,channel,is_dm,is_ai,text) VALUES(?,?,?,?,?,?,?,?)", (now-30, "out", "dashboard", "Dashboard", 0, 0, 0, "hi back"))
+    c.execute("INSERT INTO msg_log(ts,direction,node_id,node_name,channel,is_dm,is_ai,text,mesh_id,ack_state) VALUES(?,?,?,?,?,?,?,?,?,?)", (now-30, "out", "dashboard", "Dashboard", 0, 0, 0, "hi back", 12345, "ack"))
     c.execute("INSERT INTO nodes(node_id,short_name,long_name,lat,lon,battery,snr,hops,last_heard,updated,hw_model,role) "
               "VALUES('!aa11bb22','K4XR','K4XR-7',34.1,-84.2,86,7.5,0,?,?,'HELTEC_V3','CLIENT')", (now-120, now-31))
     c.execute("INSERT INTO nodes(node_id,short_name,long_name,lat,lon,battery,snr,hops,last_heard,updated) "
@@ -48,6 +48,32 @@ def test_feed_newest_first_and_capped(client):
     items = r.json()["items"]
     assert [i["text"] for i in items] == ["hi back", "hello"]
     assert c.get("/api/feed?limit=99999").status_code == 422  # over cap rejected, not coerced
+
+def test_feed_reports_delivery_tracking_and_ack_state(client):
+    c, _ = client
+    body = c.get("/api/feed").json()
+    assert body["delivery_tracking"] is True
+    out = next(i for i in body["items"] if i["direction"] == "out")
+    assert out["ack_state"] == "ack"
+    inb = next(i for i in body["items"] if i["direction"] == "in")
+    assert inb["ack_state"] is None
+
+def test_feed_pre_migration_db_no_500(client, monkeypatch, tmp_path):
+    # A memory.db WITHOUT ack_state (pre-5a bridge, or a bridge rollback) must
+    # degrade to delivery_tracking:false, never 500 the whole feed.
+    old = tmp_path / "old.db"
+    oc = sqlite3.connect(str(old))
+    oc.execute("CREATE TABLE msg_log(id INTEGER PRIMARY KEY, ts REAL, direction TEXT, node_id TEXT, node_name TEXT, channel INTEGER, is_dm INTEGER, is_ai INTEGER, text TEXT)")
+    oc.execute("INSERT INTO msg_log(ts,direction,node_id,node_name,channel,is_dm,is_ai,text) VALUES(?,?,?,?,?,?,?,?)", (time.time(), "in", "!aa", "N", 0, 0, 0, "hi"))
+    oc.commit(); oc.close()
+    _, m = client
+    monkeypatch.setattr(m, "DB_PATH", str(old))
+    m._ack_cache = None  # reset the feature-detect cache
+    r = TestClient(m.app).get("/api/feed")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["delivery_tracking"] is False
+    assert body["items"][0]["ack_state"] is None
 
 def test_feed_since_filter(client):
     c, _ = client
