@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-export interface Msg { id: number; ts: number; direction: "in" | "out"; node_id: string; node_name: string; channel: number; is_dm: number; is_ai: number; text: string; }
+export interface Msg { id: number; ts: number; direction: "in" | "out"; node_id: string; node_name: string; channel: number; is_dm: number; is_ai: number; text: string; ack_state: string | null; }
+export interface AssistantReply { answer: string; window_note: string | null; truncated: boolean; }
 export interface Node {
   node_id: string; short_name: string | null; long_name: string | null; lat: number | null; lon: number | null;
   battery: number | null; snr: number | null; hops: number | null; last_heard: number | null; updated: number | null;
@@ -70,7 +71,7 @@ async function get<T>(url: string): Promise<T> {
   return r.json();
 }
 
-export const fetchFeed = () => get<{ items: Msg[] }>("/api/feed?limit=100");
+export const fetchFeed = () => get<{ items: Msg[]; delivery_tracking?: boolean }>("/api/feed?limit=100");
 export const fetchNodes = () => get<{ items: Node[]; snapshot_ts: number | null }>("/api/nodes");
 export const fetchLog = () => get<{ items: Msg[] }>("/api/log?limit=200");
 export const fetchImages = () => get<{ items: Img[]; mounted: boolean }>("/api/images");
@@ -90,6 +91,20 @@ export async function sendMessage(text: string, channel: number, to: string | nu
     const detail = Array.isArray(d) ? d.map((x: any) => x?.msg ?? String(x)).join("; ") : d ?? `send failed (${r.status})`;
     throw new Error(detail);
   }
+}
+
+export async function askAssistant(question: string): Promise<AssistantReply> {
+  const r = await fetch("/api/assistant", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Mesh-Dashboard": "1" },
+    body: JSON.stringify({ question }),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => null);
+    const d = j?.detail;
+    const detail = Array.isArray(d) ? d.map((x: any) => x?.msg ?? String(x)).join("; ") : d ?? `analyst error (${r.status})`;
+    throw new Error(detail);
+  }
+  return r.json();
 }
 
 /** Poll a fetcher every `ms`; keeps last good data and exposes staleness. */

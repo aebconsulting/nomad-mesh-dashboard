@@ -140,6 +140,42 @@ header {
 .tag.out { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
 .tag.stale { color: var(--warn); border-color: var(--warn); }
 
+/* ---------- delivery glyphs ---------- */
+.glyph { font-family: var(--mono); font-size: 11px; margin-left: 6px; cursor: default; vertical-align: 1px; }
+.glyph.g-ack { color: var(--ok); }
+.glyph.g-acc { color: var(--muted); }
+.glyph.g-rel { color: var(--ai); }
+.glyph.g-fail { color: var(--crit); }
+
+/* ---------- mesh analyst ---------- */
+.analyst { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.analyst-banner {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; color: var(--ai);
+  background: color-mix(in srgb, var(--ai) 9%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ai) 30%, transparent);
+  padding: 6px 14px;
+}
+.analyst-log { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; display: flex; flex-direction: column; gap: 2px; }
+.analyst-turn { padding: 8px 14px; border-bottom: 1px solid var(--line-soft); }
+.analyst-turn:last-child { border-bottom: 0; }
+.a-q { font-family: var(--mono); font-size: 12px; color: var(--accent); margin-bottom: 5px; }
+.a-q::before { content: "› "; color: var(--faint); }
+.a-a { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.5; }
+.a-trunc { color: var(--warn); font-family: var(--mono); font-size: 11px; }
+.a-note { margin-top: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.a-err { color: var(--crit); font-family: var(--mono); font-size: 12px; }
+.a-thinking { padding: 8px 14px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.analyst-input { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel-2); }
+.analyst-input .msg-input {
+  flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text);
+  font-family: var(--mono); font-size: 13px; padding: 12px 11px; border-radius: 2px;
+}
+.analyst-input button {
+  font-family: var(--mono); font-size: 12.5px; letter-spacing: .08em; cursor: pointer;
+  background: var(--ai); color: var(--bg-deep); border: 0; padding: 11px 18px; border-radius: 2px; font-weight: 700;
+}
+.analyst-input button:disabled { opacity: .5; cursor: default; }
+
 /* ---------- send box ---------- */
 .send { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel-2); flex-wrap: wrap; align-items: center; }
 .send .combo-input, .send .msg-input {
