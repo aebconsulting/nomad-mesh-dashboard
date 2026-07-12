@@ -121,6 +121,9 @@ header {
 
 /* ---------- feed ---------- */
 .feed { display: flex; flex-direction: column; max-height: 460px; overflow-y: auto; }
+/* `.feed`'s display:flex outranks the UA [hidden] rule, so hiding it for the
+   analyst tab needs this explicit override (else the feed bleeds through). */
+.feed[hidden] { display: none; }
 .msg { display: flex; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line-soft); }
 .msg:last-child { border-bottom: 0; }
 .msg .ts { font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; padding-top: 2px; font-variant-numeric: tabular-nums; }
