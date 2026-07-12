@@ -66,7 +66,9 @@ header {
 @media (max-width: 600px) { .vitals { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- command-center grid ---------- */
-.cmd-grid { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 14px; align-items: stretch; }
+/* Chat rides the LEFT rail (operator convention: traffic log at hand, situation
+   map on the right); 360px floor keeps the send box composing on one row. */
+.cmd-grid { display: grid; grid-template-columns: minmax(360px, 5fr) minmax(0, 7fr); gap: 14px; align-items: stretch; }
 .chat-rail { display: flex; flex-direction: column; min-width: 0; }
 /* The rail is viewport-sized so the feed scrolls INTERNALLY; without a hard
    height the feed's full history would stretch the whole hero row with it. */
@@ -77,6 +79,7 @@ header {
 .nodes-panel .tbl-wrap { height: 420px; }
 @media (max-width: 1100px) {
   .cmd-grid, .lower-grid { grid-template-columns: 1fr; }
+  .map-hero { order: -1; }  /* stacked view stays map-first (QA'd mobile flow) */
   .chat-rail .panel { height: auto; }
   .chat-rail .feed { max-height: 52vh; }
 }
@@ -141,14 +144,14 @@ header {
 .send { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel-2); flex-wrap: wrap; align-items: center; }
 .send .combo-input, .send .msg-input {
   background: var(--bg); border: 1px solid var(--line); color: var(--text);
-  font-family: var(--mono); font-size: 12.5px; padding: 11px 10px; border-radius: 2px;
+  font-family: var(--mono); font-size: 13px; padding: 12px 11px; border-radius: 2px;
 }
 /* Recipient picker: reads as a selector (chevron), not a dead label. */
 .combo { position: relative; flex: 0 0 195px; min-width: 150px; }
 .combo-input { width: 100%; box-sizing: border-box; padding-right: 26px !important; cursor: pointer; }
 .combo-caret { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 10px; pointer-events: none; }
 /* Message field fills the row; the byte counter sits INSIDE it, right-aligned. */
-.msg-wrap { position: relative; flex: 1 1 200px; min-width: 160px; display: flex; }
+.msg-wrap { position: relative; flex: 1 1 260px; min-width: 200px; display: flex; }
 .msg-wrap .msg-input { width: 100%; padding-right: 52px !important; }
 .send .count {
   position: absolute; right: 11px; top: 50%; transform: translateY(-50%);
@@ -272,7 +275,7 @@ td.dim { color: var(--muted); }
 .g3 { background: radial-gradient(circle at 45% 70%, #bd7320 0%, #1c2431 55%, #0e131a 100%); }
 
 /* ---------- log ---------- */
-.log { font-family: var(--mono); font-size: 12px; max-height: 190px; overflow-y: auto; }
+.log { font-family: var(--mono); font-size: 12px; max-height: 420px; overflow-y: auto; }
 .log .row { display: flex; gap: 12px; padding: 5px 14px; border-bottom: 1px solid var(--line-soft); }
 .log .row:last-child { border-bottom: 0; }
 .log .ts { color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
