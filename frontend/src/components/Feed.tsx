@@ -35,8 +35,11 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
   replyingTo: ReplyTarget | null; onClearReply: () => void;
 }) {
   const [tab, setTab] = useState<"feed" | "analyst">("feed");
-  const [hideSelf, setHideSelf] = useState(false);
-  const [hideAI, setHideAI] = useState(false);
+  // Restrict-to filters matching the Combined Log (NOT hide filters): pressing a
+  // toggle narrows the feed to ONLY that category; both pressed = self OR AI;
+  // neither pressed = everything (the default).
+  const [onlySelf, setOnlySelf] = useState(false);
+  const [onlyAI, setOnlyAI] = useState(false);
   const [openPicker, setOpenPicker] = useState<number | null>(null);
   const [reactPending, setReactPending] = useState<number | null>(null);
   const [reactErr, setReactErr] = useState<{ id: number; msg: string } | null>(null);
@@ -61,7 +64,8 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
       arr.push(m); reactions.set(m.reply_to_id, arr);
     }
   }
-  const shown = chrono.filter(m => !m.is_reaction && !(hideSelf && isSelf(m)) && !(hideAI && isAI(m)));
+  const shown = chrono.filter(m => !m.is_reaction &&
+    ((!onlySelf && !onlyAI) || (onlySelf && isSelf(m)) || (onlyAI && isAI(m))));
 
   // The user scrolling toggles "stick": at/near the bottom keeps following new
   // messages; scrolling up to read history stops the follow so they aren't yanked.
@@ -104,8 +108,8 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
         <span className="right">
           <button className="tab" aria-pressed={tab === "feed"} onClick={() => setTab("feed")}>Feed</button>
           <button className="tab" aria-pressed={tab === "analyst"} onClick={() => setTab("analyst")}>Analyst</button>
-          {tab === "feed" && <button className="tab" aria-pressed={!hideSelf} onClick={() => setHideSelf(v => !v)}>self</button>}
-          {tab === "feed" && <button className="tab" aria-pressed={!hideAI} onClick={() => setHideAI(v => !v)}>AI</button>}
+          {tab === "feed" && <button className="tab" aria-pressed={onlySelf} onClick={() => setOnlySelf(v => !v)} title="Show only this device's transmissions">self</button>}
+          {tab === "feed" && <button className="tab" aria-pressed={onlyAI} onClick={() => setOnlyAI(v => !v)} title="Show only AI messages">AI</button>}
         </span>
       </div>
       {/* Analyst, feed, and send box ALL stay mounted across tabs, toggled with
