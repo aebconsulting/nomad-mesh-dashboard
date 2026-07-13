@@ -70,7 +70,7 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
               const [label, cls] = sig(n.snr);
               return (
                 <tr key={n.node_id}>
-                  <td><button className="nm-btn" onClick={() => onSelectNode(n.node_id)} title="DM this node">{n.short_name ?? n.node_id}</button></td>
+                  <td><button className="nm-btn" onClick={() => onSelectNode(n.node_id)} title="DM this node + show it on the map">{n.short_name ?? n.node_id}</button></td>
                   <td className="col-type">{deviceType(n.hw_model)}</td>
                   <td className="col-role">{roleLabel(n.role)}</td>
                   <td><span className={`batt ${battClass(n.battery)}`}><span className="bar"><i style={{ width: `${n.battery ?? 0}%` }} /></span>{n.battery ?? "—"}%</span></td>

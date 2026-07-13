@@ -20,6 +20,7 @@ export default function App() {
   const [dmTarget, setDmTarget] = useState("");       // "" = Broadcast CH0, else a node_id — shared by the node table and the send box
   const [showOffline, setShowOffline] = useState(false);
   const [detailNode, setDetailNode] = useState<string | null>(null);
+  const [focusNode, setFocusNode] = useState<string | null>(null); // node table → map: highlighted node
   return (
     <div className="wrap">
       <Header status={status.data} unreachable={status.stale} />
@@ -31,12 +32,12 @@ export default function App() {
             dmTarget={dmTarget} onDmTargetChange={setDmTarget} showOffline={showOffline}
           />
         </div>
-        <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)} onOpenDetail={setDetailNode} />
+        <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)} onOpenDetail={setDetailNode} focusNode={focusNode} onFocusClear={() => setFocusNode(null)} />
       </div>
       <div className="lower-grid">
         <Nodes
           items={nodes.data?.items ?? []} stale={nodes.stale}
-          onSelectNode={(id) => setDmTarget(id)}
+          onSelectNode={(id) => { setDmTarget(id); setFocusNode(id); }}
           onOpenDetail={setDetailNode}
           showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)}
         />
