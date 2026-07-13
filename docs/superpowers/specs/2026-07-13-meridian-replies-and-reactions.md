@@ -162,6 +162,11 @@ RAG — this feature adds two columns, two kwargs, one helper, one guard clause.
    `OWN_NODE_IDS` — standing rule).
 3. Rollbacks independent: bridge → `:v5`, dashboard → `:v21`. Either direction degrades per the
    matrix above; nothing 500s.
+4. Rollback caveat (found in final review): once bridge v12 has ever run, the reply columns EXIST
+   in memory.db, so a bridge rollback to `:v5` leaves the dashboard's `replies` probe true — the
+   affordances stay visible and v11 silently drops the fields (replies send as plain messages,
+   reactions as bare emoji; no errors). If the affordances must disappear during a bridge
+   rollback, pair it with dashboard `:v21`. Same caveat class as `delivery_tracking`.
 
 ## Out of scope (explicit)
 
