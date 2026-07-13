@@ -152,6 +152,8 @@ header {
 
 /* ---------- mesh analyst ---------- */
 .analyst { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+/* display:flex outranks the UA [hidden] rule — same trap as .feed above. */
+.analyst[hidden] { display: none; }
 .analyst-banner {
   font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; color: var(--ai);
   background: color-mix(in srgb, var(--ai) 9%, transparent);

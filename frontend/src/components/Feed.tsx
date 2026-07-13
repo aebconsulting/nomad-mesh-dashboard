@@ -68,10 +68,11 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
           {tab === "feed" && <button className="tab" aria-pressed={!hideAI} onClick={() => setHideAI(v => !v)}>AI</button>}
         </span>
       </div>
-      {/* Analyst mounts only when active (its session state is disposable). The
-          feed + send box stay mounted always, toggled with `hidden`, so the
-          list scroll and any draft persist across tab switches. */}
-      {tab === "analyst" && <Assistant />}
+      {/* Analyst, feed, and send box ALL stay mounted across tabs, toggled with
+          `hidden`: the analyst keeps its conversation (and an in-flight answer
+          still lands) while the feed keeps its scroll and any draft. State lives
+          for the app session; a reload starts fresh. */}
+      <Assistant hidden={tab !== "analyst"} />
       <div className="feed" ref={scrollRef} onScroll={onFeedScroll} hidden={tab !== "feed"}>
         {shown.length === 0 && <div className="empty">No messages yet — the mesh is quiet.</div>}
         {shown.map(m => (

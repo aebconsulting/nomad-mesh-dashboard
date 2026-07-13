@@ -6,16 +6,19 @@ import { askAssistant } from "../api";
 // RF-authored node name that reaches the model unable to inject markup.
 type Turn = { q: string; a?: string; err?: string; note?: string | null; truncated?: boolean };
 
-export function Assistant() {
+export function Assistant({ hidden }: { hidden?: boolean }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
 
+  // Skip while hidden (display:none → scrollHeight reads 0); re-run on unhide
+  // so a reply that landed on the other tab is scrolled into view on return.
   useEffect(() => {
+    if (hidden) return;
     const el = logRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [turns]);
+  }, [turns, hidden]);
 
   const submit = async () => {
     const question = q.trim();
@@ -35,7 +38,7 @@ export function Assistant() {
   };
 
   return (
-    <div className="analyst">
+    <div className="analyst" hidden={hidden}>
       <div className="analyst-banner">Local analysis · nothing here transmits to the mesh</div>
       <div className="analyst-log" ref={logRef}>
         {turns.length === 0 && (
