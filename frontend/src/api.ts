@@ -123,8 +123,26 @@ export function usePoll<T>(fn: () => Promise<T>, ms: number): { data: T | null; 
                  .catch(() => { if (live && seq === seqRef.current) setStale(true); });
     };
     tick();
-    const id = setInterval(tick, ms);
-    return () => { live = false; clearInterval(id); };
+    let id = setInterval(tick, ms);
+    // Browsers throttle timers in hidden tabs (desktop: ~1/min) and freeze them
+    // outright on locked/backgrounded phones — and don't reliably resume them.
+    // Refetch the moment the app is visible/focused/back online and restart the
+    // cadence, so returning to the tab never shows frozen data.
+    const wake = () => {
+      if (document.visibilityState !== "visible") return;
+      clearInterval(id);
+      tick();
+      id = setInterval(tick, ms);
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
+    return () => {
+      live = false; clearInterval(id);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
+      window.removeEventListener("online", wake);
+    };
   }, []);
   return { data, stale };
 }
