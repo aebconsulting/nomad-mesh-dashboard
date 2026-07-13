@@ -18,6 +18,14 @@ BASEMAP_PMTILES = os.environ.get("BASEMAP_PMTILES", "20260704.pmtiles")
 # base's direct-neighbor edges from nodes.hops==0 (reliable + immediate), on top of any
 # links captured in the neighbors table.
 BASE_NODE_ID = os.environ.get("BASE_NODE_ID", "")
+# The operator's OWN co-located devices (the base + any second radio sitting feet
+# away). They always show a strong direct signal but say NOTHING about whether
+# OTHER people will hear a channel send, so they're excluded from relay-reach
+# metrics (the "nearest router" vital) and flagged in the analyst context.
+OWN_NODE_IDS = os.environ.get("OWN_NODE_IDS", "")
+_OWN_NODES = {x.strip() for x in OWN_NODE_IDS.split(",") if x.strip()}
+if BASE_NODE_ID:
+    _OWN_NODES.add(BASE_NODE_ID)
 FEED_CAP = 500
 IMG_RE = re.compile(r"^[A-Za-z0-9._-]+\.(png|jpe?g|webp|gif)$")
 DEST_RE = re.compile(r"^![0-9a-fA-F]{8}$")
@@ -277,6 +285,7 @@ def status():
     return {"ok": db_ok and bridge is not None and bridge.get("ok", False),
             "db_ok": db_ok,
             "last_msg_ts": last_msg, "last_node_update": last_node,
+            "own_nodes": sorted(_OWN_NODES),
             "bridge": bridge, "now": time.time()}
 
 class SendReq(BaseModel):
@@ -403,28 +412,38 @@ def _fmt(v):
 def context_pack(question: str) -> dict:
     """Deterministic, PUBLIC-ONLY pack: only rows /api/nodes|/api/stats|/api/feed
     already expose. Never touches the private facts/messages tables. Aggregates are
-    precomputed here so the model narrates rather than calculates. Budgeted (<=40
-    nodes, routers first; <=30 outbound) and the window is stated in the pack."""
+    precomputed here so the model narrates rather than calculates. Budgeted (<=60
+    nodes heard in 24h, direct routers first; <=30 outbound) and the window is
+    stated in the pack. Each node carries radio (SNR/hops) + device (type/battery/
+    voltage/role) fields so the analyst can answer 'which router hears me', 'how
+    strong is node X', and 'what device is X'."""
     now = time.time()
-    online = "last_heard > {}".format(now - 7200)
+    online = "last_heard > {}".format(now - 7200)     # "online now" = heard in the last 2h
+    recent = "last_heard > {}".format(now - 86400)    # broader node list = heard in the last 24h
     agg = q("SELECT COUNT(*) n, SUM(CASE WHEN {} THEN 1 ELSE 0 END) online, "
             "MIN(snr) min_snr, AVG(snr) avg_snr FROM nodes".format(online))[0]
     worst = q("SELECT short_name, node_id, battery FROM nodes WHERE battery IS NOT NULL AND {} "
               "ORDER BY battery ASC LIMIT 1".format(online))
-    routers = q("SELECT short_name, node_id, snr, hops, battery, role, last_heard FROM nodes "
-                "WHERE {} ORDER BY (hops=0) DESC, snr DESC LIMIT 40".format(online))
+    routers = q("SELECT short_name, node_id, snr, hops, battery, role, hw_model, voltage, last_heard "
+                "FROM nodes WHERE {} ORDER BY (hops=0) DESC, snr DESC LIMIT 60".format(recent))
     total_nodes = agg["n"] or 0
     wb = "n/a"
     if worst:
         wb = "{} {}%".format(_clean(worst[0]["short_name"] or worst[0]["node_id"]), worst[0]["battery"])
     summary = (
         "Nodes: {online}/{total} online (heard in the last 2h). SNR across nodes: min {mn}, avg {av}. "
-        "Lowest battery: {wb}. Delivery states are radio-level only — 'radio accepted' = the radio took "
-        "the packet; 'ack' (DM) = the destination radio acknowledged, NOT that a person read it; "
-        "'relayed' = a neighbor repeated a broadcast; 'failed:*' = the radio gave up."
+        "Lowest battery: {wb}. Each node below lists its device type, SNR (signal strength — higher/less "
+        "negative is stronger), hops (0 = heard directly), battery %, voltage, role, and how long ago it "
+        "was heard. Delivery states are radio-level only — 'radio accepted' = the radio took the packet; "
+        "'ack' (DM) = the destination radio acknowledged, NOT that a person read it; 'relayed' = a "
+        "neighbor repeated a broadcast; 'failed:*' = the radio gave up. "
+        "Nodes flagged own=true are the operator's OWN co-located devices — they always show a strong "
+        "signal and do NOT indicate whether OTHERS will hear a send; ignore them when judging relay "
+        "reach or picking the nearest router."
     ).format(online=agg["online"] or 0, total=total_nodes, mn=_fmt(agg["min_snr"]), av=_fmt(agg["avg_snr"]), wb=wb)
-    nodes = [{"name": _clean(r["short_name"] or r["node_id"]), "snr": r["snr"], "hops": r["hops"],
-              "battery": r["battery"], "role": _clean(r["role"], 20),
+    nodes = [{"name": _clean(r["short_name"] or r["node_id"]), "device": _clean(r["hw_model"], 24) or None,
+              "snr": r["snr"], "hops": r["hops"], "battery": r["battery"], "volts": r["voltage"],
+              "role": _clean(r["role"], 20) or None, "own": r["node_id"] in _OWN_NODES,
               "age_min": round((now - r["last_heard"]) / 60) if r["last_heard"] else None}
              for r in routers]
     ocols = "text, is_dm, channel, ts" + (", ack_state" if _msg_log_has_ack() else "")
