@@ -1,32 +1,46 @@
-# NOMAD Mesh Dashboard
+# Meridian — Mesh Command Center
 
-A self-hosted, **offline-first** web dashboard for a [Meshtastic](https://meshtastic.org)
-mesh network — the companion UI to
-[mesh-ai-bridge](https://github.com/aebconsulting/mesh-ai-bridge).
+**Meridian** is a self-hosted, **offline-first** command center for a
+[Meshtastic](https://meshtastic.org) mesh network — the companion UI to
+[mesh-ai-bridge](https://github.com/aebconsulting/mesh-ai-bridge), built for the NOMAD
+off-grid stack. (Repo/image name: `nomad-mesh-dashboard`.)
 
 It reads the bridge's SQLite database **read-only** and transmits back through the
 bridge's token-gated HTTP API, so it never opens the radio itself (the bridge stays the
 single radio owner). Every asset — map tiles, fonts, JavaScript — is served locally, so
 the whole thing works with **no internet**.
 
-![NOMAD Mesh Dashboard](docs/screenshot-desktop.png)
+![Meridian — mesh command center](docs/screenshot-desktop.png)
 
 ## What it shows
 
-- **Live message feed** with a send box — broadcast on the primary channel or DM any node
-  (searchable recipient picker), plus `self` / `AI` filters. The feed follows new messages
-  to the bottom without yanking you when you've scrolled up.
-- **Node map** — MapLibre GL rendering an offline vector basemap (PMTiles); node positions
-  plotted live, hover for a popup, click a node to open its detail, auto-fit with a manual
-  **FIT** button.
-- **Node table** — sortable by any column: device type, role, battery, signal, hops,
-  last-heard. An **offline** toggle hides nodes not heard in the last 2 hours.
-- **Combined log** — a console-style tail of mesh / AI / TX traffic (newest first).
-- **Per-node detail drawer** — the full picture for one node: identity, position /
-  altitude / satellites, device metrics (voltage, channel utilization, uptime), every
-  telemetry group the node reports (device / environment / power / air-quality), and
-  recent weather history — with a one-tap **DM** button.
+- **Mesh vitals strip** — nodes online, your nearest relay (router-preferred, with a
+  direct-partner count so you know a channel send will actually be heard), 24h traffic,
+  AI queries, radio-link state, and data freshness — glanceable, words not just colors.
+- **Live message feed** with a send box — broadcast or DM any node (searchable recipient
+  picker), `self` / `AI` restrict-to filters, and smart follow that never yanks you out
+  of history.
+- **Honest delivery states** on every send — ✓ radio accepted, ↻ relayed by a neighbor,
+  ✓✓ acknowledged end-to-end, ✗ failed with the radio's reason. The vocabulary never
+  claims "delivered": a radio ACK is not a human receipt.
+- **Replies & reactions** — quoted Discord-style replies and emoji tapbacks, carried as
+  first-class Meshtastic packets (official apps render them too). Inbound tapbacks stack
+  as chips under the message they answer.
+- **Mesh analyst** — a second tab that asks a *local* LLM about your mesh: signal, nodes,
+  whether a message went through. Read-only by construction (no path to the send API),
+  fed only public mesh data, and it never transmits.
+- **Node map** — MapLibre GL over an offline vector basemap (PMTiles); positions live,
+  hover popups, click-through to detail. Clicking a node name in the table flies the map
+  to it with a selection ring.
+- **Node table** — sortable by device type, role, battery, signal, hops, last-heard, with
+  an **offline** toggle.
+- **Combined log** — a console-style tail of mesh / AI / TX traffic, reactions tagged.
+- **Per-node detail drawer** — identity, position quality, device metrics, every
+  telemetry group the node reports, recent weather history, one-tap **DM**.
 
+<p align="center">
+  <img src="docs/screenshot-analyst.png" width="86%" alt="Mesh analyst tab" />
+</p>
 <p align="center">
   <img src="docs/screenshot-mobile.png" width="42%" alt="Mobile layout" />
   &nbsp;&nbsp;
@@ -56,8 +70,10 @@ browser never sees.
 
 - A running [mesh-ai-bridge](https://github.com/aebconsulting/mesh-ai-bridge) connected to
   a Meshtastic radio. Use **v6+** for the WAL database and the send API; **v9+** adds the
-  full per-node telemetry (device type, role, voltage, altitude, environment/power/air-
-  quality metrics, neighbor links) that the detail drawer surfaces.
+  full per-node telemetry the detail drawer surfaces; **v11+** adds per-message delivery
+  tracking (the ✓/↻/✓✓/✗ glyphs); **v12+** adds replies & reactions. Every feature
+  degrades gracefully against an older bridge — the UI simply hides what the data can't
+  support.
 - Docker.
 - (Optional) an offline vector basemap for the map panel — see below.
 
