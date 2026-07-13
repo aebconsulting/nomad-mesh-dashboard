@@ -49,6 +49,7 @@ export default function App() {
             dmTarget={dmTarget} onDmTargetChange={setDmTarget} showOffline={showOffline}
             replies={feed.data?.replies ?? false} onReply={onReply} onReact={onReact}
             replyingTo={replyingTo} onClearReply={() => setReplyingTo(null)}
+            onSelectUser={setFocusNode}
           />
         </div>
         <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)} onOpenDetail={setDetailNode} focusNode={focusNode} onFocusClear={() => setFocusNode(null)} />
@@ -59,6 +60,7 @@ export default function App() {
           onSelectNode={(id) => { setDmTarget(id); setFocusNode(id); }}
           onOpenDetail={setDetailNode}
           showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)}
+          focusNode={focusNode}
         />
         <LogPanel items={log.data?.items ?? []} stale={log.stale} />
       </div>

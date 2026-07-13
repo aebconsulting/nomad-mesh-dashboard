@@ -28,11 +28,11 @@ function deliveryGlyph(ack: string | null) {
   return null;
 }
 
-export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffline, replies, onReply, onReact, replyingTo, onClearReply }: {
+export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffline, replies, onReply, onReact, replyingTo, onClearReply, onSelectUser }: {
   items: Msg[]; nodes: Node[]; stale?: boolean;
   dmTarget: string; onDmTargetChange: (id: string) => void; showOffline: boolean;
   replies: boolean; onReply: (m: Msg) => void; onReact: (m: Msg, emoji: string) => Promise<void>;
-  replyingTo: ReplyTarget | null; onClearReply: () => void;
+  replyingTo: ReplyTarget | null; onClearReply: () => void; onSelectUser: (id: string) => void;
 }) {
   const [tab, setTab] = useState<"feed" | "analyst">("feed");
   // Restrict-to filters matching the Combined Log (NOT hide filters): pressing a
@@ -47,6 +47,10 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
   const stickRef = useRef(true);   // follow the newest message while pinned to the bottom
 
   const chrono = [...items].reverse(); // API is newest-first; feed reads top→bottom oldest→newest
+  // Sender names link to the node panels — but only when the node is actually in
+  // the current node list (outbound broadcasts log node_id "dashboard", and long-
+  // gone nodes have nothing to highlight).
+  const knownIds = new Set(nodes.map(n => n.node_id));
   const byMeshId = new Map<number, Msg>();
   for (const m of chrono) if (m.mesh_id != null) byMeshId.set(m.mesh_id, m);
   const reactions = new Map<number, Msg[]>();
@@ -123,7 +127,9 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
           <div key={m.id} className={`msg ${m.direction} ${m.is_ai ? "aiMsg" : ""}`}>
             <span className="ts">{hhmm(m.ts)}</span>
             <div className="body">
-              <span className="who">{m.direction === "out" ? (m.is_dm ? `RZRB → ${m.node_name}` : `RZRB → ch${m.channel}`) : m.node_name}</span>
+              {knownIds.has(m.node_id)
+                ? <button className="who who-btn" title="Show this node on the map and in the node table" onClick={() => onSelectUser(m.node_id)}>{m.direction === "out" ? (m.is_dm ? `RZRB → ${m.node_name}` : `RZRB → ch${m.channel}`) : m.node_name}</button>
+                : <span className="who">{m.direction === "out" ? (m.is_dm ? `RZRB → ${m.node_name}` : `RZRB → ch${m.channel}`) : m.node_name}</span>}
               <span className="tags">
                 {m.direction === "out" ? <span className="tag out">out</span> : null}
                 {m.is_dm ? <span className="tag dm">dm</span> : null}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ago, isOffline, deviceType, roleLabel } from "../api";
 import type { Node } from "../api";
 
@@ -30,11 +30,19 @@ function cmpNodes(a: Node, b: Node, key: SortKey, dir: 1 | -1): number {
 }
 
 // Table-only node roster (the map lives in MeshMap.tsx, the command-center hero).
-export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, onToggleOffline }: {
+export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, onToggleOffline, focusNode }: {
   items: Node[]; stale?: boolean; onSelectNode: (id: string) => void; onOpenDetail: (id: string) => void;
-  showOffline: boolean; onToggleOffline: () => void;
+  showOffline: boolean; onToggleOffline: () => void; focusNode: string | null;
 }) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "last_heard", dir: -1 });
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  // Bring the focused node's row into view when the selection changes (feed name
+  // click or table click). block:'nearest' scrolls only the table wrap, never the page.
+  useEffect(() => {
+    if (!focusNode) return;
+    wrapRef.current?.querySelector(`tr[data-node="${CSS.escape(focusNode)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [focusNode]);
 
   const shown = showOffline ? items : items.filter(n => !isOffline(n));
   const rows = [...shown].sort((a, b) => cmpNodes(a, b, sort.key, sort.dir));
@@ -51,7 +59,7 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
           <label className="offl"><input type="checkbox" checked={showOffline} onChange={onToggleOffline} /> offline</label>
         </span>
       </div>
-      <div className="tbl-wrap">
+      <div className="tbl-wrap" ref={wrapRef}>
         <table>
           <thead>
             <tr>
@@ -69,8 +77,11 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
             {rows.map(n => {
               const [label, cls] = sig(n.snr);
               return (
-                <tr key={n.node_id}>
-                  <td><button className="nm-btn" onClick={() => onSelectNode(n.node_id)} title="DM this node + show it on the map">{n.short_name ?? n.node_id}</button></td>
+                <tr key={n.node_id} data-node={n.node_id} className={n.node_id === focusNode ? "row-focus" : undefined}>
+                  <td>
+                    <button className="nm-btn" onClick={() => onSelectNode(n.node_id)} title="DM this node + show it on the map">{n.short_name ?? n.node_id}</button>
+                    {n.long_name && n.long_name !== n.short_name && <div className="nm-sub">{n.long_name}</div>}
+                  </td>
                   <td className="col-type">{deviceType(n.hw_model)}</td>
                   <td className="col-role">{roleLabel(n.role)}</td>
                   <td><span className={`batt ${battClass(n.battery)}`}><span className="bar"><i style={{ width: `${n.battery ?? 0}%` }} /></span>{n.battery ?? "—"}%</span></td>
