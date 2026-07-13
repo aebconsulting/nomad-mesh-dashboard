@@ -47,11 +47,14 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
   const byMeshId = new Map<number, Msg>();
   for (const m of chrono) if (m.mesh_id != null) byMeshId.set(m.mesh_id, m);
   const reactions = new Map<number, Msg[]>();
-  // one reaction per (target, sender, emoji) — RF retransmits and re-taps collapse
+  // one reaction per (target, sender, emoji) — RF retransmits and re-taps collapse.
+  // The sender component is direction-aware because outbound rows carry the PEER
+  // in node_id, not our own id — without this, our own reaction and the peer's
+  // same-emoji reaction would collapse into one.
   const seenReactions = new Set<string>();
   for (const m of chrono) {
     if (m.is_reaction && m.reply_to_id != null) {
-      const key = `${m.reply_to_id}|${m.node_id}|${m.text}`;
+      const key = `${m.reply_to_id}|${m.direction === "out" ? "self" : m.node_id}|${m.text}`;
       if (seenReactions.has(key)) continue;
       seenReactions.add(key);
       const arr = reactions.get(m.reply_to_id) ?? [];
@@ -79,6 +82,18 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
     if (!el) return;
     if (stickRef.current) el.scrollTop = el.scrollHeight;
   }, [items, tab]);
+
+  // Close an open picker on any click outside its .react-wrap, mirroring
+  // SendBox's combo outside-close. Only one picker is ever open at a time, so a
+  // single document-level check (rather than a per-row ref) is sufficient.
+  useEffect(() => {
+    if (openPicker == null) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest?.(".react-wrap")) setOpenPicker(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [openPicker]);
 
   return (
     <section className="panel">
@@ -146,8 +161,11 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
                             setReactPending(m.id);
                             onReact(m, e)
                               .catch(err => {
-                                setReactErr({ id: m.id, msg: err instanceof Error ? err.message : "send failed" });
-                                setTimeout(() => setReactErr(null), 4000);
+                                // Capture this error and clear functionally so a stale timer from an
+                                // earlier failed react can't wipe a newer one still on screen.
+                                const myErr = { id: m.id, msg: err instanceof Error ? err.message : "send failed" };
+                                setReactErr(myErr);
+                                setTimeout(() => setReactErr(cur => (cur === myErr ? null : cur)), 4000);
                               })
                               .finally(() => setReactPending(null));
                           }}

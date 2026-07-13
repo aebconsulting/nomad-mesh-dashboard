@@ -154,7 +154,7 @@ header {
 .act:hover { color: var(--text); border-color: var(--accent); }
 .react-wrap { position: relative; }
 .react-wrap .picker { display: none; position: absolute; bottom: 100%; right: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 3px; gap: 2px; z-index: 30; white-space: nowrap; }
-.react-wrap:hover .picker, .react-wrap:focus-within .picker { display: inline-flex; }
+.react-wrap:hover .picker { display: inline-flex; }
 .picker.open { display: inline-flex; }
 .pick { background: none; border: 0; font-size: 15px; cursor: pointer; padding: 2px 4px; }
 .pick:hover { transform: scale(1.25); }
