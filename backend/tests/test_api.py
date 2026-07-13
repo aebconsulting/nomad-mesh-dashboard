@@ -414,3 +414,30 @@ def test_stats_counts(client):
     body = r.json()
     # fixture: 2 msgs in last 60s -> 1 in ("hello"), 1 out ("hi back"), 0 ai
     assert body == {"msgs_24h": 2, "in_24h": 1, "out_24h": 1, "ai_24h": 0}
+
+def test_feed_replies_flag_false_on_pre_v12_db(client):
+    # The default fixture msg_log has mesh_id/ack_state (v11) but NO
+    # reply_to_id/is_reaction (v12) columns.
+    c, _ = client
+    r = c.get("/api/feed")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["replies"] is False
+    assert all(msg["reply_to_id"] is None and msg["is_reaction"] is None and "mesh_id" in msg
+               for msg in body["items"])
+
+def test_feed_returns_reply_columns_when_present(client, monkeypatch):
+    c, m = client
+    con = sqlite3.connect(m.DB_PATH)
+    con.execute("ALTER TABLE msg_log ADD COLUMN reply_to_id INTEGER")
+    con.execute("ALTER TABLE msg_log ADD COLUMN is_reaction INTEGER")
+    con.execute("INSERT INTO msg_log(ts, direction, node_id, node_name, channel, is_dm, is_ai, text, "
+                "mesh_id, ack_state, reply_to_id, is_reaction) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (time.time(), "in", "!11111111", "A", 0, 0, 0, "\U0001F44D", 500, None, 400, 1))
+    con.commit(); con.close()
+    m._ack_cache = None          # bust the 30s capability cache
+    m._replies_cache = None
+    r = c.get("/api/feed")
+    assert r.json()["replies"] is True
+    row = next(x for x in r.json()["items"] if x["mesh_id"] == 500)
+    assert row["reply_to_id"] == 400 and row["is_reaction"] == 1

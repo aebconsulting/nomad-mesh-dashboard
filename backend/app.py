@@ -119,14 +119,39 @@ def _msg_log_has_ack():
     _ack_cache = (val, now)
     return val
 
+_replies_cache = None  # (value, ts) — bridge v12 reply/reaction columns
+
+def _msg_log_has_replies():
+    """True when bridge v12's reply columns exist. Same degradation contract
+    as _msg_log_has_ack: a pre-v12 bridge or rollback yields replies:false,
+    never a 500."""
+    global _replies_cache
+    now = time.time()
+    if _replies_cache and now - _replies_cache[1] < 30:
+        return _replies_cache[0]
+    try:
+        cols = {r["name"] for r in q("PRAGMA table_info(msg_log)")}
+        val = "reply_to_id" in cols and "is_reaction" in cols
+    except HTTPException:
+        val = False
+    _replies_cache = (val, now)
+    return val
+
 @app.get("/api/feed")
 def feed(since: float = 0.0, limit: int = Query(100, ge=1, le=FEED_CAP)):
     has_ack = _msg_log_has_ack()
-    cols = "id, ts, direction, node_id, node_name, channel, is_dm, is_ai, text" + (", ack_state" if has_ack else "")
+    has_replies = _msg_log_has_replies()
+    cols = "id, ts, direction, node_id, node_name, channel, is_dm, is_ai, text"
+    cols += ", mesh_id" if has_ack else ""
+    cols += ", ack_state" if has_ack else ""
+    cols += ", reply_to_id, is_reaction" if has_replies else ""
     rows = q("SELECT {} FROM msg_log WHERE ts > ? ORDER BY ts DESC LIMIT ?".format(cols), (since, limit))
     for r in rows:
+        r.setdefault("mesh_id", None)
         r.setdefault("ack_state", None)
-    return {"items": rows, "delivery_tracking": has_ack}
+        r.setdefault("reply_to_id", None)
+        r.setdefault("is_reaction", None)
+    return {"items": rows, "delivery_tracking": has_ack, "replies": has_replies}
 
 @app.get("/api/log")
 def log_view(since: float = 0.0, limit: int = Query(200, ge=1, le=FEED_CAP)):
