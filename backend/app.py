@@ -4,7 +4,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 DB_PATH = os.environ.get("MEM_DB", "/opt/mesh-ai-bridge/memory.db")
 IMAGES_DIR = os.environ.get("IMAGES_DIR", "/images")
@@ -317,6 +317,11 @@ class SendReq(BaseModel):
     text: str = Field(min_length=1)
     channel: int = Field(0, ge=0, le=7)
     to: str | None = None
+    # reply_id targets an EXISTING message's mesh packet id (uint32 range: meshtastic
+    # packet ids are 1..2^32-1, 0 is never a real id). react marks this send as a
+    # tapback reaction to that message rather than a standalone reply.
+    reply_id: int | None = Field(None, ge=1, le=4294967295)
+    react: bool = False
 
     @field_validator("text")
     @classmethod
@@ -334,6 +339,18 @@ class SendReq(BaseModel):
         if v is not None and not DEST_RE.fullmatch(v):
             raise ValueError("destination must look like !1a2b3c4d")
         return v
+
+    @model_validator(mode="after")
+    def react_rules(self):
+        # A reaction MUST target a message (reply_id) and MUST be a single emoji
+        # (<=8 bytes covers multi-codepoint emoji like flags/ZWJ sequences) --
+        # anything longer is a real message, not a tapback.
+        if self.react:
+            if self.reply_id is None:
+                raise ValueError("react requires reply_id")
+            if len(self.text.encode()) > 8:
+                raise ValueError("a reaction is a single emoji (max 8 bytes)")
+        return self
 
 _send_times: dict[str, list[float]] = {}
 _send_times_lock = threading.Lock()
@@ -391,7 +408,8 @@ def send(body: SendReq, request: Request):
         _send_times[ip] = times
     try:
         r = httpx.post(BRIDGE_URL + "/api/send",
-                       json={"text": body.text, "channel": body.channel, "to": body.to},
+                       json={"text": body.text, "channel": body.channel, "to": body.to,
+                             "reply_id": body.reply_id, "react": body.react},
                        headers={"X-Send-Token": SEND_TOKEN}, timeout=10)
     except Exception:
         raise HTTPException(502, "bridge unreachable")

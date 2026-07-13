@@ -441,3 +441,54 @@ def test_feed_returns_reply_columns_when_present(client, monkeypatch):
     assert r.json()["replies"] is True
     row = next(x for x in r.json()["items"] if x["mesh_id"] == 500)
     assert row["reply_to_id"] == 400 and row["is_reaction"] == 1
+
+def _capture_bridge_send(m, monkeypatch):
+    # Same shape as test_send_validation_and_forwarding's fake_post above,
+    # reused here so reply_id/react forwarding is verified against the
+    # dashboard's existing mock pattern rather than a new one.
+    sent = {}
+    class FakeResp:
+        status_code = 200
+        def json(self): return {"ok": True}
+    def fake_post(url, json=None, headers=None, timeout=None):
+        sent.update(json or {}); return FakeResp()
+    monkeypatch.setattr(m.httpx, "post", fake_post)
+    return sent
+
+def test_send_forwards_reply_id(client, monkeypatch):
+    c, m = client
+    sent = _capture_bridge_send(m, monkeypatch)
+    r = c.post("/api/send", json={"text": "hi", "channel": 0, "reply_id": 777},
+               headers=CSRF_HEADERS)
+    assert r.status_code == 200
+    assert sent["reply_id"] == 777 and sent["react"] is False
+
+def test_send_react_valid(client, monkeypatch):
+    c, m = client
+    sent = _capture_bridge_send(m, monkeypatch)
+    r = c.post("/api/send", json={"text": "\U0001F44D", "channel": 0, "reply_id": 777, "react": True},
+               headers=CSRF_HEADERS)
+    assert r.status_code == 200
+    assert sent["react"] is True
+
+def test_send_react_requires_reply_id(client, monkeypatch):
+    c, m = client
+    monkeypatch.setattr(m.httpx, "post", _no_bridge_call)
+    r = c.post("/api/send", json={"text": "\U0001F44D", "channel": 0, "react": True},
+               headers=CSRF_HEADERS)
+    assert r.status_code == 422
+
+def test_send_react_caps_bytes(client, monkeypatch):
+    c, m = client
+    monkeypatch.setattr(m.httpx, "post", _no_bridge_call)
+    r = c.post("/api/send", json={"text": "not an emoji", "channel": 0, "reply_id": 7, "react": True},
+               headers=CSRF_HEADERS)
+    assert r.status_code == 422
+
+def test_send_reply_id_bounds(client, monkeypatch):
+    c, m = client
+    monkeypatch.setattr(m.httpx, "post", _no_bridge_call)
+    for bad in (0, -1, 4294967296):
+        r = c.post("/api/send", json={"text": "hi", "channel": 0, "reply_id": bad},
+                   headers=CSRF_HEADERS)
+        assert r.status_code == 422, bad
