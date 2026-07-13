@@ -130,7 +130,7 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
         ))}
       </div>
       <div hidden={tab !== "feed"}>
-        <SendBox nodes={nodes} value={dmTarget} onChange={onDmTargetChange} showOffline={showOffline} />
+        <SendBox nodes={nodes} value={dmTarget} onChange={onDmTargetChange} showOffline={showOffline} replyingTo={replyingTo} onClearReply={onClearReply} />
       </div>
     </section>
   );

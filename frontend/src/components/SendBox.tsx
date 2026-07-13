@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { sendMessage, isOffline } from "../api";
-import type { Node } from "../api";
+import type { Node, ReplyTarget } from "../api";
 
 type Opt = { id: string; label: string; offline?: boolean };
 const BROADCAST: Opt = { id: "", label: "Broadcast · CH0" };
 
-export function SendBox({ nodes, value, onChange, showOffline }: {
+export function SendBox({ nodes, value, onChange, showOffline, replyingTo, onClearReply }: {
   nodes: Node[]; value: string; onChange: (id: string) => void; showOffline: boolean;
+  replyingTo: ReplyTarget | null; onClearReply: () => void;
 }) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");      // recipient search text (only shown while open)
@@ -65,8 +66,9 @@ export function SendBox({ nodes, value, onChange, showOffline }: {
     if (clearRef.current) { clearTimeout(clearRef.current); clearRef.current = null; }
     setNote("sending…");
     try {
-      await sendMessage(text.trim(), 0, value || null);
+      await sendMessage(text.trim(), replyingTo?.channel ?? 0, value || null, replyingTo?.meshId ?? null);
       setText(""); setNote("sent");
+      onClearReply();
       clearRef.current = setTimeout(() => { setNote(null); clearRef.current = null; }, 3000);
     } catch (err) {
       setNote(err instanceof Error ? err.message : "send failed");
@@ -75,6 +77,12 @@ export function SendBox({ nodes, value, onChange, showOffline }: {
 
   return (
     <form className="send" onSubmit={submit} autoComplete="off">
+      {replyingTo && (
+        <div className="reply-strip">
+          <span className="reply-quote">↳ Replying to {replyingTo.name}: {replyingTo.text.slice(0, 60)}</span>
+          <button type="button" className="reply-x" title="Cancel reply" onClick={onClearReply}>✕</button>
+        </div>
+      )}
       <div className="combo" ref={comboRef}>
         <input
           className="combo-input" type="text" role="combobox" aria-expanded={open}
