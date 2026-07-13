@@ -47,8 +47,13 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
   const byMeshId = new Map<number, Msg>();
   for (const m of chrono) if (m.mesh_id != null) byMeshId.set(m.mesh_id, m);
   const reactions = new Map<number, Msg[]>();
+  // one reaction per (target, sender, emoji) — RF retransmits and re-taps collapse
+  const seenReactions = new Set<string>();
   for (const m of chrono) {
     if (m.is_reaction && m.reply_to_id != null) {
+      const key = `${m.reply_to_id}|${m.node_id}|${m.text}`;
+      if (seenReactions.has(key)) continue;
+      seenReactions.add(key);
       const arr = reactions.get(m.reply_to_id) ?? [];
       arr.push(m); reactions.set(m.reply_to_id, arr);
     }
@@ -115,7 +120,7 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
                 <div className="chips">
                   {Object.entries(
                     (reactions.get(m.mesh_id ?? -1) ?? []).reduce<Record<string, string[]>>((acc, r) => {
-                      (acc[r.text] = acc[r.text] ?? []).push(authorOf(r)); return acc;
+                      (acc[r.text] = acc[r.text] ?? []).push(`${authorOf(r)}${r.direction === "out" && r.ack_state ? ` (${r.ack_state})` : ""}`); return acc;
                     }, {})
                   ).map(([emoji, who]) => (
                     <span key={emoji} className="chip" title={who.join(", ")}>{emoji}{who.length > 1 ? ` ${who.length}` : ""}</span>

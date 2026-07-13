@@ -32,6 +32,7 @@ export function LogPanel({ items, stale }: { items: Msg[]; stale?: boolean }) {
           <div key={m.id} className="row">
             <span className="ts">{t(m.ts)}</span>
             <span className={`kind k-${kind(m)}`}>{kind(m)}</span>
+            {m.is_reaction ? <span className="tag">react</span> : null}
             <span className="txt">{m.direction === "out" ? (m.is_dm ? `RZRB → ${m.node_name}` : `RZRB → ch${m.channel}`) : `${m.node_name} → ch${m.channel}`}: {m.text}</span>
           </div>
         ))}
