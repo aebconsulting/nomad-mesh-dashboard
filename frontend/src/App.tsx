@@ -6,7 +6,8 @@ import { Nodes } from "./components/Nodes";
 import { MeshMap } from "./components/MeshMap";
 import { NodeDetail } from "./components/NodeDetail";
 import { LogPanel } from "./components/LogPanel";
-import { usePoll, fetchStatus, fetchStats, fetchFeed, fetchNodes, fetchLog } from "./api";
+import { usePoll, fetchStatus, fetchStats, fetchFeed, fetchNodes, fetchLog, sendMessage } from "./api";
+import type { Msg, ReplyTarget } from "./api";
 
 // AI images gallery hidden until images can be generated/delivered over the mesh
 // (re-enable: restore the Images import, its usePoll, and the <Images> row below).
@@ -21,6 +22,21 @@ export default function App() {
   const [showOffline, setShowOffline] = useState(false);
   const [detailNode, setDetailNode] = useState<string | null>(null);
   const [focusNode, setFocusNode] = useState<string | null>(null); // node table → map: highlighted node
+  const [replyingTo, setReplyingTo] = useState<ReplyTarget | null>(null);
+
+  // Reply scope rule: a channel message replies as a broadcast on that channel
+  // (dm null); a DM replies back to the sender as a DM.
+  const onReply = (m: Msg) => {
+    if (m.mesh_id == null) return;
+    const dm = m.is_dm && m.direction === "in" ? m.node_id : null;
+    setReplyingTo({ meshId: m.mesh_id, name: m.node_name, text: m.text, channel: m.channel, dm });
+    setDmTarget(dm ?? "");
+  };
+  const onReact = async (m: Msg, emoji: string) => {
+    if (m.mesh_id == null) return;
+    const dm = m.is_dm && m.direction === "in" ? m.node_id : null;
+    await sendMessage(emoji, m.channel, dm, m.mesh_id, true).catch(() => {});
+  };
   return (
     <div className="wrap">
       <Header status={status.data} unreachable={status.stale} />
@@ -30,6 +46,8 @@ export default function App() {
           <Feed
             items={feed.data?.items ?? []} nodes={nodes.data?.items ?? []} stale={feed.stale}
             dmTarget={dmTarget} onDmTargetChange={setDmTarget} showOffline={showOffline}
+            replies={feed.data?.replies ?? false} onReply={onReply} onReact={onReact}
+            replyingTo={replyingTo} onClearReply={() => setReplyingTo(null)}
           />
         </div>
         <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)} onOpenDetail={setDetailNode} focusNode={focusNode} onFocusClear={() => setFocusNode(null)} />

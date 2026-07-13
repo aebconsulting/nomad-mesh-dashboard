@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Msg, Node } from "../api";
+import type { Msg, Node, ReplyTarget } from "../api";
 import { SendBox } from "./SendBox";
 import { Assistant } from "./Assistant";
 
@@ -7,6 +7,7 @@ const hhmm = (ts: number) => new Date(ts * 1000).toLocaleTimeString([], { hour: 
 const NEAR_BOTTOM_PX = 60;
 const isSelf = (m: Msg) => m.direction === "out" && m.is_ai !== 1;
 const isAI = (m: Msg) => m.is_ai === 1;
+const PICKER = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 // Honest delivery glyph from ack_state (NULL = nothing — never a fake state).
 // Wording never says "delivered": a radio ACK is not a human receipt.
@@ -22,9 +23,11 @@ function deliveryGlyph(ack: string | null) {
   return null;
 }
 
-export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffline }: {
+export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffline, replies, onReply, onReact, replyingTo, onClearReply }: {
   items: Msg[]; nodes: Node[]; stale?: boolean;
   dmTarget: string; onDmTargetChange: (id: string) => void; showOffline: boolean;
+  replies: boolean; onReply: (m: Msg) => void; onReact: (m: Msg, emoji: string) => void;
+  replyingTo: ReplyTarget | null; onClearReply: () => void;
 }) {
   const [tab, setTab] = useState<"feed" | "analyst">("feed");
   const [hideSelf, setHideSelf] = useState(false);
@@ -33,7 +36,16 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
   const stickRef = useRef(true);   // follow the newest message while pinned to the bottom
 
   const chrono = [...items].reverse(); // API is newest-first; feed reads top→bottom oldest→newest
-  const shown = chrono.filter(m => !(hideSelf && isSelf(m)) && !(hideAI && isAI(m)));
+  const byMeshId = new Map<number, Msg>();
+  for (const m of chrono) if (m.mesh_id != null) byMeshId.set(m.mesh_id, m);
+  const reactions = new Map<number, Msg[]>();
+  for (const m of chrono) {
+    if (m.is_reaction && m.reply_to_id != null) {
+      const arr = reactions.get(m.reply_to_id) ?? [];
+      arr.push(m); reactions.set(m.reply_to_id, arr);
+    }
+  }
+  const shown = chrono.filter(m => !m.is_reaction && !(hideSelf && isSelf(m)) && !(hideAI && isAI(m)));
 
   // The user scrolling toggles "stick": at/near the bottom keeps following new
   // messages; scrolling up to read history stops the follow so they aren't yanked.
@@ -86,7 +98,33 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
                 {m.is_ai ? <span className="tag ai">ai</span> : null}
                 {m.direction === "out" ? deliveryGlyph(m.ack_state) : null}
               </span>
+              {m.reply_to_id != null && (() => {
+                const t = byMeshId.get(m.reply_to_id);
+                return <div className="quote">↳ {t ? `${t.node_name}: ${t.text.slice(0, 60)}` : "replying to an earlier message"}</div>;
+              })()}
               <div className="txt">{m.text}</div>
+              {(reactions.get(m.mesh_id ?? -1) ?? []).length > 0 && (
+                <div className="chips">
+                  {Object.entries(
+                    (reactions.get(m.mesh_id ?? -1) ?? []).reduce<Record<string, string[]>>((acc, r) => {
+                      (acc[r.text] = acc[r.text] ?? []).push(r.node_name); return acc;
+                    }, {})
+                  ).map(([emoji, who]) => (
+                    <span key={emoji} className="chip" title={who.join(", ")}>{emoji}{who.length > 1 ? ` ${who.length}` : ""}</span>
+                  ))}
+                </div>
+              )}
+              {replies && m.mesh_id != null && (
+                <span className="row-actions">
+                  <button className="act" title="Reply" onClick={() => onReply(m)}>↩</button>
+                  <span className="react-wrap">
+                    <button className="act" title="React">😀+</button>
+                    <span className="picker">
+                      {PICKER.map(e => <button key={e} className="pick" onClick={() => onReact(m, e)}>{e}</button>)}
+                    </span>
+                  </span>
+                </span>
+              )}
             </div>
           </div>
         ))}
