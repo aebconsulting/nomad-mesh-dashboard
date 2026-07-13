@@ -55,6 +55,28 @@ export function roleLabel(role: string | null): string {
   return ROLE_LABELS[role] ?? role;
 }
 
+// Plain-English role definitions from the official Meshtastic docs — what the role
+// is for and, crucially, whether the node RELAYS other people's packets (the thing
+// that decides if it helps carry the mesh or just rides it).
+const ROLE_INFO: Record<string, string> = {
+  CLIENT: "Standard node. Relays others' packets when no one else has yet — every client helps carry the mesh.",
+  CLIENT_MUTE: "Does NOT relay other nodes' packets — sends and receives only its own traffic. Rides the mesh without carrying it (used to reduce congestion in dense areas).",
+  CLIENT_HIDDEN: "Stealth / power-save: transmits only when it must and hides from node lists. Relays locally only.",
+  CLIENT_BASE: "Personal base station: ALWAYS relays packets to/from its favorited nodes (e.g. weaker indoor devices); handles everything else like a Client.",
+  ROUTER: "Infrastructure relay: ALWAYS rebroadcasts every packet once, ahead of clients. The mesh backbone — intended for high, remote placements.",
+  ROUTER_LATE: "Infrastructure relay that always rebroadcasts once but LAST, after everyone else — fills dead spots and backs up local clusters without hogging airtime.",
+  REPEATER: "Pure relay: always rebroadcasts once with minimal overhead and hides itself from node lists entirely.",
+  TRACKER: "Prioritizes broadcasting its GPS position; relays others' packets only while awake.",
+  SENSOR: "Prioritizes broadcasting its telemetry (weather/power); relays others' packets only while awake.",
+  LOST_AND_FOUND: "Broadcasts its location to the default channel regularly to help recover the device.",
+  TAK: "Optimized for ATAK tactical systems; reduces routine broadcasts. Relays like a client.",
+  TAK_TRACKER: "Standalone ATAK position beacon; reduces routine broadcasts. Relays like a client.",
+};
+export function roleInfo(role: string | null): string {
+  if (role == null) return "This node has not reported a role.";
+  return ROLE_INFO[role] ?? "Unrecognized role (newer firmware than this dashboard knows).";
+}
+
 /** Compact uptime: "Xd Yh" >= 1 day, "Yh Zm" >= 1 hour, else "Zm". */
 export function fmtUptime(s: number | null): string {
   if (s == null) return "—";

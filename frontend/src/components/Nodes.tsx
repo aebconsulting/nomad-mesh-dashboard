@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ago, isOffline, deviceType, roleLabel } from "../api";
+import { ago, isOffline, deviceType, roleLabel, roleInfo } from "../api";
 import type { Node } from "../api";
 
 const battClass = (b: number | null) => b == null ? "" : b < 25 ? "low" : b < 60 ? "mid" : "";
@@ -65,7 +65,7 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
             <tr>
               <th onClick={() => onSort("name")}>Node{caret("name")}</th>
               <th className="col-type" onClick={() => onSort("hw_model")}>Type{caret("hw_model")}</th>
-              <th className="col-role" onClick={() => onSort("role")}>Role{caret("role")}</th>
+              <th className="col-role" onClick={() => onSort("role")} title="A node’s configured Meshtastic role decides whether it relays other people’s packets — hover a role for its rules">Role{caret("role")}</th>
               <th onClick={() => onSort("battery")}>Battery{caret("battery")}</th>
               <th onClick={() => onSort("snr")}>Signal{caret("snr")}</th>
               <th className="col-hops" onClick={() => onSort("hops")}>Hops{caret("hops")}</th>
@@ -83,7 +83,7 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
                     {n.long_name && n.long_name !== n.short_name && <div className="nm-sub">{n.long_name}</div>}
                   </td>
                   <td className="col-type">{deviceType(n.hw_model)}</td>
-                  <td className="col-role">{roleLabel(n.role)}</td>
+                  <td className="col-role role-help" title={roleInfo(n.role)}>{roleLabel(n.role)}</td>
                   <td><span className={`batt ${battClass(n.battery)}`}><span className="bar"><i style={{ width: `${n.battery ?? 0}%` }} /></span>{n.battery ?? "—"}%</span></td>
                   <td className={`sig ${cls}`}>{label}</td>
                   <td className="col-hops">{n.hops ?? "—"}</td>

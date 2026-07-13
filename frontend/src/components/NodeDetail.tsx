@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchNodeDetail, deviceType, roleLabel, fmtUptime } from "../api";
+import { fetchNodeDetail, deviceType, roleLabel, roleInfo, fmtUptime } from "../api";
 import type { NodeDetail as NodeDetailData } from "../api";
 
 const ago = (ts: number | null | undefined) => ts == null ? "—" : `${Math.max(0, Math.round((Date.now() / 1000 - ts) / 60))}m ago`;
@@ -62,7 +62,7 @@ export function NodeDetail({ nodeId, onClose, onDm }: {
                 <h4>Identity</h4>
                 <dl className="dd-dl">
                   <div><dt>Device</dt><dd>{deviceType(n.hw_model ?? null)}</dd></div>
-                  <div><dt>Role</dt><dd>{roleLabel(n.role ?? null)}</dd></div>
+                  <div><dt>Role</dt><dd className="role-help" title={roleInfo(n.role ?? null)}>{roleLabel(n.role ?? null)}</dd></div>
                   <div><dt>Node ID</dt><dd>{n.node_id ?? nodeId}</dd></div>
                 </dl>
               </section>
