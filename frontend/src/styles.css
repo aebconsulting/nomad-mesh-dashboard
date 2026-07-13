@@ -149,13 +149,17 @@ header {
 .chip { font-size: 12px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); cursor: default; }
 .row-actions { margin-left: 8px; opacity: 0; transition: opacity .12s; display: inline-flex; gap: 4px; vertical-align: 1px; }
 .msg:hover .row-actions { opacity: 1; }
+.row-actions:focus-within { opacity: 1; }
 .act { background: none; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 11px; padding: 0 5px; cursor: pointer; }
 .act:hover { color: var(--text); border-color: var(--accent); }
 .react-wrap { position: relative; }
 .react-wrap .picker { display: none; position: absolute; bottom: 100%; right: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 3px; gap: 2px; z-index: 30; white-space: nowrap; }
 .react-wrap:hover .picker, .react-wrap:focus-within .picker { display: inline-flex; }
+.picker.open { display: inline-flex; }
 .pick { background: none; border: 0; font-size: 15px; cursor: pointer; padding: 2px 4px; }
 .pick:hover { transform: scale(1.25); }
+.pick:disabled { opacity: .4; cursor: default; transform: none; }
+.act-err { font-size: 11px; color: var(--crit); margin-left: 6px; }
 @media (max-width: 600px) { .row-actions { opacity: 1; } }  /* always visible on mobile */
 
 /* ---------- delivery glyphs ---------- */

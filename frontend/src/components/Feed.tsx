@@ -9,6 +9,11 @@ const isSelf = (m: Msg) => m.direction === "out" && m.is_ai !== 1;
 const isAI = (m: Msg) => m.is_ai === 1;
 const PICKER = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
+// Outbound rows store the DM PEER's name in node_name (bridge fact) — the base's
+// own short name is RZRB. Any surface that attributes authorship (quotes, chip
+// tooltips, reply targets) must show RZRB for our own outbound rows, not the peer.
+export const authorOf = (m: Msg) => m.direction === "out" ? "RZRB" : m.node_name;
+
 // Honest delivery glyph from ack_state (NULL = nothing — never a fake state).
 // Wording never says "delivered": a radio ACK is not a human receipt.
 function deliveryGlyph(ack: string | null) {
@@ -26,12 +31,15 @@ function deliveryGlyph(ack: string | null) {
 export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffline, replies, onReply, onReact, replyingTo, onClearReply }: {
   items: Msg[]; nodes: Node[]; stale?: boolean;
   dmTarget: string; onDmTargetChange: (id: string) => void; showOffline: boolean;
-  replies: boolean; onReply: (m: Msg) => void; onReact: (m: Msg, emoji: string) => void;
+  replies: boolean; onReply: (m: Msg) => void; onReact: (m: Msg, emoji: string) => Promise<void>;
   replyingTo: ReplyTarget | null; onClearReply: () => void;
 }) {
   const [tab, setTab] = useState<"feed" | "analyst">("feed");
   const [hideSelf, setHideSelf] = useState(false);
   const [hideAI, setHideAI] = useState(false);
+  const [openPicker, setOpenPicker] = useState<number | null>(null);
+  const [reactPending, setReactPending] = useState<number | null>(null);
+  const [reactErr, setReactErr] = useState<{ id: number; msg: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickRef = useRef(true);   // follow the newest message while pinned to the bottom
 
@@ -100,14 +108,14 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
               </span>
               {m.reply_to_id != null && (() => {
                 const t = byMeshId.get(m.reply_to_id);
-                return <div className="quote">↳ {t ? `${t.node_name}: ${t.text.slice(0, 60)}` : "replying to an earlier message"}</div>;
+                return <div className="quote">↳ {t ? `${authorOf(t)}: ${t.text.slice(0, 60)}` : "replying to an earlier message"}</div>;
               })()}
               <div className="txt">{m.text}</div>
               {(reactions.get(m.mesh_id ?? -1) ?? []).length > 0 && (
                 <div className="chips">
                   {Object.entries(
                     (reactions.get(m.mesh_id ?? -1) ?? []).reduce<Record<string, string[]>>((acc, r) => {
-                      (acc[r.text] = acc[r.text] ?? []).push(r.node_name); return acc;
+                      (acc[r.text] = acc[r.text] ?? []).push(authorOf(r)); return acc;
                     }, {})
                   ).map(([emoji, who]) => (
                     <span key={emoji} className="chip" title={who.join(", ")}>{emoji}{who.length > 1 ? ` ${who.length}` : ""}</span>
@@ -117,12 +125,32 @@ export function Feed({ items, nodes, stale, dmTarget, onDmTargetChange, showOffl
               {replies && m.mesh_id != null && (
                 <span className="row-actions">
                   <button className="act" title="Reply" onClick={() => onReply(m)}>↩</button>
-                  <span className="react-wrap">
-                    <button className="act" title="React">😀+</button>
-                    <span className="picker">
-                      {PICKER.map(e => <button key={e} className="pick" onClick={() => onReact(m, e)}>{e}</button>)}
+                  <span className="react-wrap" onKeyDown={(ev) => { if (ev.key === "Escape") setOpenPicker(null); }}>
+                    <button
+                      className="act" title="React"
+                      aria-haspopup="true" aria-expanded={openPicker === m.id}
+                      onClick={() => setOpenPicker(p => p === m.id ? null : m.id)}
+                    >😀+</button>
+                    <span className={`picker${openPicker === m.id ? " open" : ""}`}>
+                      {PICKER.map(e => (
+                        <button
+                          key={e} className="pick" disabled={reactPending !== null}
+                          onClick={() => {
+                            if (reactPending !== null) return;
+                            setOpenPicker(null);
+                            setReactPending(m.id);
+                            onReact(m, e)
+                              .catch(err => {
+                                setReactErr({ id: m.id, msg: err instanceof Error ? err.message : "send failed" });
+                                setTimeout(() => setReactErr(null), 4000);
+                              })
+                              .finally(() => setReactPending(null));
+                          }}
+                        >{e}</button>
+                      ))}
                     </span>
                   </span>
+                  {reactErr?.id === m.id && <span className="act-err">{reactErr.msg}</span>}
                 </span>
               )}
             </div>

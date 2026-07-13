@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Header } from "./components/Header";
 import { Vitals } from "./components/Vitals";
-import { Feed } from "./components/Feed";
+import { Feed, authorOf } from "./components/Feed";
 import { Nodes } from "./components/Nodes";
 import { MeshMap } from "./components/MeshMap";
 import { NodeDetail } from "./components/NodeDetail";
@@ -25,17 +25,18 @@ export default function App() {
   const [replyingTo, setReplyingTo] = useState<ReplyTarget | null>(null);
 
   // Reply scope rule: a channel message replies as a broadcast on that channel
-  // (dm null); a DM replies back to the sender as a DM.
+  // (dm null); a DM (inbound OR outbound — outbound DM rows store the PEER in
+  // node_id) replies back into that same DM thread, never broadcast.
   const onReply = (m: Msg) => {
     if (m.mesh_id == null) return;
-    const dm = m.is_dm && m.direction === "in" ? m.node_id : null;
-    setReplyingTo({ meshId: m.mesh_id, name: m.node_name, text: m.text, channel: m.channel, dm });
+    const dm = m.is_dm ? m.node_id : null;
+    setReplyingTo({ meshId: m.mesh_id, name: authorOf(m), text: m.text, channel: m.channel, dm });
     setDmTarget(dm ?? "");
   };
-  const onReact = async (m: Msg, emoji: string) => {
-    if (m.mesh_id == null) return;
-    const dm = m.is_dm && m.direction === "in" ? m.node_id : null;
-    await sendMessage(emoji, m.channel, dm, m.mesh_id, true).catch(() => {});
+  const onReact = (m: Msg, emoji: string): Promise<void> => {
+    if (m.mesh_id == null) return Promise.resolve();
+    const dm = m.is_dm ? m.node_id : null;
+    return sendMessage(emoji, m.channel, dm, m.mesh_id, true);
   };
   return (
     <div className="wrap">
