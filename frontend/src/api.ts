@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-export interface Msg { id: number; ts: number; direction: "in" | "out"; node_id: string; node_name: string; channel: number; is_dm: number; is_ai: number; text: string; ack_state: string | null; }
+export interface Msg { id: number; ts: number; direction: "in" | "out"; node_id: string; node_name: string; channel: number; is_dm: number; is_ai: number; text: string; ack_state: string | null; mesh_id: number | null; reply_to_id: number | null; is_reaction: number | null; }
+export type ReplyTarget = { meshId: number; name: string; text: string; channel: number; dm: string | null };
 export interface AssistantReply { answer: string; window_note: string | null; truncated: boolean; }
 export interface Node {
   node_id: string; short_name: string | null; long_name: string | null; lat: number | null; lon: number | null;
@@ -71,7 +72,7 @@ async function get<T>(url: string): Promise<T> {
   return r.json();
 }
 
-export const fetchFeed = () => get<{ items: Msg[]; delivery_tracking?: boolean }>("/api/feed?limit=100");
+export const fetchFeed = () => get<{ items: Msg[]; delivery_tracking?: boolean; replies?: boolean }>("/api/feed?limit=100");
 export const fetchNodes = () => get<{ items: Node[]; snapshot_ts: number | null }>("/api/nodes");
 export const fetchLog = () => get<{ items: Msg[] }>("/api/log?limit=200");
 export const fetchImages = () => get<{ items: Img[]; mounted: boolean }>("/api/images");
@@ -80,10 +81,10 @@ export const fetchStats = () => get<Stats>("/api/stats");
 export const fetchNodeDetail = (id: string) => get<NodeDetail>(`/api/nodes/${encodeURIComponent(id)}/detail`);
 export const fetchNeighbors = () => get<{ items: NeighborLink[] }>("/api/neighbors");
 
-export async function sendMessage(text: string, channel: number, to: string | null): Promise<void> {
+export async function sendMessage(text: string, channel: number, to: string | null, replyId?: number | null, react?: boolean): Promise<void> {
   const r = await fetch("/api/send", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Mesh-Dashboard": "1" },
-    body: JSON.stringify({ text, channel, to }),
+    body: JSON.stringify({ text, channel, to, reply_id: replyId ?? null, react: react ?? false }),
   });
   if (!r.ok) {
     const j = await r.json().catch(() => null);
