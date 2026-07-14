@@ -36,6 +36,9 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
   ownNodes: string[]; baseNode: string | null;
 }) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "last_heard", dir: -1 });
+  // "mine" restricts the roster to the operator's radios (base + own + pinned) —
+  // a restrict-to filter like the Combined Log's self/AI toggles, not a hide-filter.
+  const [mineOnly, setMineOnly] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   // Bring the focused node's row into view when the selection changes (feed name
   // click or table click). block:'nearest' scrolls only the table wrap, never the page.
@@ -50,7 +53,9 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
   // (the base is serially attached to the bridge; a stale self-entry just means
   // it hasn't transmitted lately). Base first, then other own, then the mesh.
   const own = new Set(ownNodes);
-  const shown = showOffline ? items : items.filter(n => own.has(n.node_id) || !isOffline(n));
+  const mine = (n: Node) => n.node_id === baseNode || own.has(n.node_id);
+  const pool = mineOnly ? items.filter(mine) : items;
+  const shown = showOffline ? pool : pool.filter(n => mine(n) || !isOffline(n));
   const rank = (n: Node) => n.node_id === baseNode ? 0 : own.has(n.node_id) ? 1 : 2;
   const rows = [...shown].sort((a, b) => (rank(a) - rank(b)) || cmpNodes(a, b, sort.key, sort.dir));
 
@@ -63,6 +68,7 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
         <span className="t">Mesh nodes</span><span className="n">{shown.length} of {items.length} heard · 60s refresh</span>
         {stale && <span className="tag stale">STALE</span>}
         <span className="right">
+          <label className="offl"><input type="checkbox" checked={mineOnly} onChange={() => setMineOnly(v => !v)} /> mine</label>
           <label className="offl"><input type="checkbox" checked={showOffline} onChange={onToggleOffline} /> offline</label>
         </span>
       </div>
