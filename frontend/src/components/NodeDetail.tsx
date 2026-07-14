@@ -164,12 +164,15 @@ export function NodeDetail({ nodeId, onClose, onDm, canTrace, nodes, baseNode, o
     );
   }
 
-  // Honesty constraint (bridge): a direction whose SNR list disagreed with its
-  // route length was degraded to all-null. route_back empty AND every
-  // snr_back null means "no usable back data" — don't render an empty back
-  // line implying one hop of real signal. A direct 0-hop reply (route_back
-  // empty, one real snr_back entry) still renders.
-  const hasBack = !!traceResult && (traceResult.route_back.length > 0 || traceResult.snr_back.some(v => v != null));
+  // Honesty constraint (bridge): for any `ok` result the bridge guarantees
+  // snr_back.length == route_back.length + 1 (padding with unknown-SNR
+  // placeholders, never truncating). A genuine direct (0-hop) reply is
+  // route_back=[] with exactly one snr_back entry — which CAN legitimately
+  // be null (reply arrived, SNR unknown). So presence must be judged by
+  // LENGTH, not by whether any SNR value is non-null: a truly empty
+  // snr_back (length 0) only happens when the backend's defensive DB read
+  // hit a NULL/malformed column, i.e. no back data was ever recorded.
+  const hasBack = !!traceResult && (traceResult.route_back.length > 0 || traceResult.snr_back.length > 0);
 
   const n = data?.node;
 

@@ -343,6 +343,7 @@ td.dim { color: var(--muted); }
 .dd-trace-label { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
 .dd-trace-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-family: var(--mono); font-size: 12px; color: var(--text); }
 .dd-trace-hop { display: inline-flex; align-items: center; gap: 4px; }
+.dd-trace-node { color: var(--text); font-weight: 600; }
 .dd-trace-arrow { color: var(--faint); }
 .dd-trace-snr { color: var(--muted); font-variant-numeric: tabular-nums; }
 
