@@ -115,11 +115,55 @@ def test_traceroute_rate_limit_third_call_429(client, monkeypatch):
     assert len(calls) == 2, "3rd call must be rejected before ever reaching the bridge"
 
 
+def test_traceroute_bridge_error_status_passthrough_not_collapsed(client, monkeypatch):
+    """/api/send forwards the bridge's RAW status code; /api/traceroute must
+    match -- a bridge 401 (misconfigured token) must not misread as 502."""
+    c, m = client
+    class FakeResp:
+        status_code = 401
+        def json(self):
+            return {"error": "bad send token"}
+    monkeypatch.setattr(m.httpx, "post", lambda *a, **k: FakeResp())
+    r = c.post("/api/traceroute", json={"to": "!11111111"}, headers=CSRF_HEADERS)
+    assert r.status_code == 401, "the bridge's actual status must survive, not collapse to 502"
+    assert r.json() == {"detail": "bad send token"}
+
+
+def test_traceroute_bridge_429_preserves_retry_after(client, monkeypatch):
+    """The bridge's 429 body includes a numeric retry_after; it must survive
+    to the client, not just the error string."""
+    c, m = client
+    class FakeResp:
+        status_code = 429
+        def json(self):
+            return {"error": "radio busy", "retry_after": 25}
+    monkeypatch.setattr(m.httpx, "post", lambda *a, **k: FakeResp())
+    r = c.post("/api/traceroute", json={"to": "!11111111"}, headers=CSRF_HEADERS)
+    assert r.status_code == 429
+    assert r.json()["detail"]["retry_after"] == 25
+
+
 def test_traceroute_rejects_bad_dest(client, monkeypatch):
     c, m = client
     monkeypatch.setattr(m.httpx, "post", _no_bridge_call)
     r = c.post("/api/traceroute", json={"to": "not-a-node"}, headers=CSRF_HEADERS)
     assert r.status_code == 422
+
+
+class FakeBadJsonResp:
+    status_code = 200
+    def json(self):
+        raise ValueError("not valid json")
+
+
+def test_traceroute_post_success_with_unparseable_body_returns_id_none(client, monkeypatch):
+    """A bridge 200 whose body isn't valid JSON must not 500 the proxy -- the
+    send already happened, we just can't read the row id back."""
+    c, m = client
+    monkeypatch.setattr(m.httpx, "post", lambda *a, **k: FakeBadJsonResp())
+    r = c.post("/api/traceroute", json={"to": "!11111111"}, headers=CSRF_HEADERS)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "id": None}
 
 
 def test_traceroute_bridge_unreachable_502(client, monkeypatch):
@@ -147,9 +191,41 @@ def test_traceroute_get_result_parses_json_fields(client):
     assert "age_s" in body and body["age_s"] >= 0
 
 
+def test_traceroute_get_result_malformed_route_column_degrades_to_empty_list(client):
+    """Only the trusted co-subscriber writes these columns (via json.dumps), so
+    this is DB-corruption-only -- but the 'never crash' rule still applies:
+    a malformed column must degrade to [], not raise json.JSONDecodeError."""
+    c, m = client
+    conn = sqlite3.connect(m.DB_PATH)
+    conn.execute(
+        "INSERT INTO traceroutes(id, ts, dest, dest_name, hop_limit, status, route, "
+        "snr_towards, route_back, snr_back, resp_ts, request_id) VALUES(2,?,?,?,?,?,?,?,?,?,?,?)",
+        (time.time(), "!55555555", "NodeB", 3, "ok", "{not-valid-json",
+         json.dumps([1, 2]), "[]", "null", time.time(), 1000))
+    conn.commit(); conn.close()
+    r = c.get("/api/traceroute/2")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["route"] == [], "malformed JSON in a DB column must degrade to [], not 500"
+    assert body["snr_towards"] == [1, 2], "a validly-encoded column must still parse normally"
+    assert body["snr_back"] == [], "a parsed-but-non-list value (JSON null) must also degrade to []"
+
+
 def test_traceroute_get_unknown_id_404(client):
     c, _ = client
     assert c.get("/api/traceroute/999").status_code == 404
+
+
+def test_traceroute_get_result_404_when_table_absent(client, monkeypatch, tmp_path):
+    """A stale tab / bridge rollback that removed the traceroutes table must
+    yield an honest 404, not an uncaught sqlite3.OperationalError -> 500."""
+    c, m = client
+    old = tmp_path / "no_traceroutes2.db"
+    make_db(str(old), with_traceroutes=False)
+    monkeypatch.setattr(m, "DB_PATH", str(old))
+    m._tr_flag_cache = None  # bust the 30s feature-detect cache
+    r = TestClient(m.app).get("/api/traceroute/1")
+    assert r.status_code == 404
 
 
 # ---------- /api/status traceroute flag ----------

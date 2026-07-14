@@ -497,22 +497,56 @@ def traceroute(body: TraceReq, request: Request):
         raise HTTPException(502, "bridge unreachable")
     if r.status_code != 200:
         detail = "bridge refused the traceroute"
+        retry_after = None
         try:
-            detail = r.json().get("error", detail)
+            errbody = r.json()
+            detail = errbody.get("error", detail)
+            retry_after = errbody.get("retry_after")
         except Exception:
             pass
-        raise HTTPException(r.status_code if r.status_code in (400, 429, 503) else 502, detail)
-    return {"ok": True, "id": r.json().get("id")}
+        # Forward the bridge's ACTUAL status code (like /api/send does) rather
+        # than collapsing anything outside a fixed set to 502 -- e.g. a 401 from
+        # a misconfigured token must not misread as "bridge unreachable". A
+        # genuine connection failure (httpx raising) is still mapped to 502
+        # above, before this branch is ever reached.
+        if retry_after is not None:
+            raise HTTPException(r.status_code, {"error": detail, "retry_after": retry_after})
+        raise HTTPException(r.status_code, detail)
+    try:
+        okbody = r.json()
+        rid = okbody.get("id") if isinstance(okbody, dict) else None
+    except Exception:
+        # A 200 whose body isn't valid JSON (or isn't a dict): the send still
+        # happened, we just can't read the row id back -- degrade, don't 500.
+        rid = None
+    return {"ok": True, "id": rid}
 
 @app.get("/api/traceroute/{row_id}")
 def traceroute_result(row_id: int):
+    if not _has_traceroutes():
+        # A stale tab across a bridge rollback/fresh-boot, or a direct GET before
+        # the UI checks the feature flag, must never see the raw sqlite3.Operational
+        # Error a missing table causes -- degrade to an honest 404 instead.
+        raise HTTPException(404, "traceroute feature not available")
     rows = q("SELECT id, ts, dest, dest_name, hop_limit, status, route, snr_towards, "
              "route_back, snr_back, resp_ts FROM traceroutes WHERE id=?", (row_id,))
     if not rows:
         raise HTTPException(404, "no such traceroute")
     r = rows[0]
     for k in ("route", "snr_towards", "route_back", "snr_back"):
-        r[k] = json.loads(r[k]) if r[k] else []
+        # Only the trusted co-subscriber writes these (via json.dumps), so a
+        # parse failure here means DB corruption -- degrade to [] rather than
+        # raise json.JSONDecodeError. Same for a value that parses but isn't
+        # actually a list (e.g. a stray JSON null).
+        val = []
+        if r[k]:
+            try:
+                parsed = json.loads(r[k])
+            except (ValueError, TypeError):
+                parsed = None
+            if isinstance(parsed, list):
+                val = parsed
+        r[k] = val
     r["age_s"] = round(time.time() - r["ts"], 1)
     return r
 
