@@ -5,7 +5,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DB_PATH = os.environ.get("MEM_DB", "/opt/mesh-ai-bridge/memory.db")
 IMAGES_DIR = os.environ.get("IMAGES_DIR", "/images")
@@ -143,6 +143,24 @@ def _msg_log_has_replies():
     except HTTPException:
         val = False
     _replies_cache = (val, now)
+    return val
+
+_tr_flag_cache = None  # (value, ts) -- bridge v17 traceroutes table, 30s TTL
+
+def _has_traceroutes():
+    """Feature-detect bridge v17 (same degradation contract as _msg_log_has_ack:
+    a bridge older than the traceroute feature, or a rollback, yields False --
+    never a 500)."""
+    global _tr_flag_cache
+    now = time.time()
+    if _tr_flag_cache and now - _tr_flag_cache[1] < 30:
+        return _tr_flag_cache[0]
+    try:
+        rows = q("SELECT name FROM sqlite_master WHERE type='table' AND name='traceroutes'")
+        val = bool(rows)
+    except HTTPException:
+        val = False
+    _tr_flag_cache = (val, now)
     return val
 
 @app.get("/api/feed")
@@ -321,6 +339,7 @@ def status():
             "own_nodes": sorted(_OWN_NODES),
             "pinned_nodes": sorted(_PINNED_NODES),
             "base_node": BASE_NODE_ID or None,
+            "traceroute": _has_traceroutes(),
             "bridge": bridge, "now": time.time()}
 
 class SendReq(BaseModel):
@@ -431,6 +450,71 @@ def send(body: SendReq, request: Request):
             pass
         raise HTTPException(r.status_code, detail)
     return {"ok": True}
+
+# ---------- mesh traceroute ----------
+# Bridge v17 owns the `traceroutes` table -- a co-subscriber fills each row in
+# (pending -> ok / failed:<REASON> / timeout) as the probe's real response
+# arrives. This backend only proxies the fire (auth + rate-limit server-side,
+# forwarding SEND_TOKEN the same way /api/send does) and reads results back.
+# 2/min own bucket: the radio itself only permits ~1 traceroute per ~35s, so
+# this is a conservative client-side guard, not the real throttle.
+class TraceReq(BaseModel):
+    to: str
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("to")
+    @classmethod
+    def _to_ok(cls, v):
+        if not DEST_RE.fullmatch(v or ""):
+            raise ValueError("destination must look like !1a2b3c4d")
+        return v
+
+_trace_times: dict[str, list[float]] = {}
+_trace_times_lock = threading.Lock()
+
+@app.post("/api/traceroute")
+def traceroute(body: TraceReq, request: Request):
+    if request.headers.get("x-mesh-dashboard") != "1":
+        raise HTTPException(403, "missing X-Mesh-Dashboard header")
+    ip = client_ip(request)
+    now = time.time()
+    with _trace_times_lock:
+        for key in list(_trace_times.keys()):
+            trimmed = [t for t in _trace_times[key] if now - t < 60]
+            if trimmed:
+                _trace_times[key] = trimmed
+            else:
+                del _trace_times[key]
+        times = _trace_times.get(ip, [])
+        if len(times) >= 2:
+            raise HTTPException(429, "rate limited: max 2 traceroutes/minute")
+        times.append(now)
+        _trace_times[ip] = times
+    try:
+        r = httpx.post(BRIDGE_URL + "/api/traceroute", json={"to": body.to},
+                       headers={"X-Send-Token": SEND_TOKEN}, timeout=10)
+    except Exception:
+        raise HTTPException(502, "bridge unreachable")
+    if r.status_code != 200:
+        detail = "bridge refused the traceroute"
+        try:
+            detail = r.json().get("error", detail)
+        except Exception:
+            pass
+        raise HTTPException(r.status_code if r.status_code in (400, 429, 503) else 502, detail)
+    return {"ok": True, "id": r.json().get("id")}
+
+@app.get("/api/traceroute/{row_id}")
+def traceroute_result(row_id: int):
+    rows = q("SELECT id, ts, dest, dest_name, hop_limit, status, route, snr_towards, "
+             "route_back, snr_back, resp_ts FROM traceroutes WHERE id=?", (row_id,))
+    if not rows:
+        raise HTTPException(404, "no such traceroute")
+    r = rows[0]
+    for k in ("route", "snr_towards", "route_back", "snr_back"):
+        r[k] = json.loads(r[k]) if r[k] else []
+    r["age_s"] = round(time.time() - r["ts"], 1)
+    return r
 
 # ---------- link shortener ----------
 # Mesh messages cap at ~200 bytes, so a pasted URL often IS the whole budget.
