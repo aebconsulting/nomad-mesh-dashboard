@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchNodeDetail, deviceType, roleLabel, roleInfo, fmtUptime } from "../api";
-import type { NodeDetail as NodeDetailData } from "../api";
+import { fetchNodeDetail, deviceType, roleLabel, roleInfo, fmtUptime, postTraceroute, getTraceroute } from "../api";
+import type { NodeDetail as NodeDetailData, Node, TraceResult } from "../api";
 
 const ago = (ts: number | null | undefined) => ts == null ? "—" : `${Math.max(0, Math.round((Date.now() / 1000 - ts) / 60))}m ago`;
 const fmtTs = (ts: number) => new Date(ts * 1000).toLocaleString();
@@ -15,9 +15,23 @@ const GROUP_LABELS: Record<string, string> = {
   healthMetrics: "Health",
 };
 
-/** Slide-in node detail drawer: identity, position, device, per-group telemetry, weather. */
-export function NodeDetail({ nodeId, onClose, onDm }: {
+const TRACE_POLL_MS = 3000;
+const TRACE_TIMEOUT_MS = 90_000;
+const TRACE_COOLDOWN_MS = 35_000; // radio only permits ~1 traceroute per ~35s
+
+const fmtSnr = (v: number | null | undefined) => v == null ? "?" : `${v} dB`;
+
+/** `ok` renders the hop chain instead; everything else renders as this line. */
+function traceStatusLine(status: string): string {
+  if (status === "timeout") return "no response (timed out)";
+  if (status.startsWith("failed:")) return `failed: ${status.slice("failed:".length)}`;
+  return status;
+}
+
+/** Slide-in node detail drawer: identity, position, device, per-group telemetry, weather, trace route. */
+export function NodeDetail({ nodeId, onClose, onDm, canTrace, nodes, baseNode, onTraceDone }: {
   nodeId: string; onClose: () => void; onDm: (id: string) => void;
+  canTrace: boolean; nodes: Node[]; baseNode: string | null; onTraceDone: (r: TraceResult | null) => void;
 }) {
   const [data, setData] = useState<NodeDetailData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +53,123 @@ export function NodeDetail({ nodeId, onClose, onDm }: {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // ---- Trace route ----
+  const [traceId, setTraceId] = useState<number | null>(null);
+  const [tracePending, setTracePending] = useState(false);
+  const [traceResult, setTraceResult] = useState<TraceResult | null>(null);
+  const [traceError, setTraceError] = useState<string | null>(null);
+  const [traceTimedOut, setTraceTimedOut] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
+
+  // Reset all trace state whenever the traced node changes, and tell App the
+  // shown route is gone on unmount too (App already clears its own copy on
+  // close — this covers a node-switch with the drawer left open).
+  useEffect(() => {
+    setTraceId(null);
+    setTracePending(false);
+    setTraceResult(null);
+    setTraceError(null);
+    setTraceTimedOut(false);
+    setCooldownUntil(null);
+    return () => { onTraceDone(null); };
+  }, [nodeId, onTraceDone]);
+
+  // 1s ticker purely to refresh the pending/cooldown countdown text — no network activity.
+  useEffect(() => {
+    if (!tracePending && cooldownUntil == null) return;
+    const iv = setInterval(() => {
+      setNowTick(Date.now());
+      setCooldownUntil(c => (c != null && c <= Date.now() ? null : c));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [tracePending, cooldownUntil]);
+
+  // Poll the result while a trace is outstanding; ~90s of "pending" gives up.
+  useEffect(() => {
+    if (traceId == null) return;
+    let live = true;
+    const start = Date.now();
+    const poll = () => {
+      getTraceroute(traceId).then(r => {
+        if (!live) return;
+        if (r.status === "pending") {
+          if (Date.now() - start > TRACE_TIMEOUT_MS) {
+            setTracePending(false);
+            setTraceTimedOut(true);
+            setCooldownUntil(Date.now() + TRACE_COOLDOWN_MS);
+            setTraceId(null);
+          }
+          return;
+        }
+        setTracePending(false);
+        setTraceResult(r);
+        setCooldownUntil(Date.now() + TRACE_COOLDOWN_MS);
+        if (r.status === "ok") onTraceDone(r);
+        setTraceId(null);
+      }).catch(e => {
+        if (!live) return;
+        setTracePending(false);
+        setTraceError(e?.message ?? "poll failed");
+        setTraceId(null);
+      });
+    };
+    poll();
+    const iv = setInterval(poll, TRACE_POLL_MS);
+    return () => { live = false; clearInterval(iv); };
+  }, [traceId, onTraceDone]);
+
+  const cooldownS = cooldownUntil != null ? Math.max(0, Math.ceil((cooldownUntil - nowTick) / 1000)) : 0;
+
+  async function startTrace() {
+    if (tracePending || cooldownS > 0) return;
+    setTraceError(null);
+    setTraceResult(null);
+    setTraceTimedOut(false);
+    setTracePending(true);
+    try {
+      const r = await postTraceroute(nodeId);
+      setTraceId(r.id);
+    } catch (e: any) {
+      setTracePending(false);
+      setTraceError(e?.message ?? "traceroute failed");
+    }
+  }
+
+  /** `!hex` -> long_name ?? short_name ?? the raw id; null (base unconfigured) -> "base". */
+  const resolveName = (id: string | null): string => {
+    if (id == null) return "base";
+    const found = nodes.find(x => x.node_id === id);
+    if (found) return found.long_name ?? found.short_name ?? id;
+    if (traceResult && id === traceResult.dest && traceResult.dest_name) return traceResult.dest_name;
+    return id;
+  };
+
+  /** Endpoints are implicit: `hops` is intermediate-only, `snrs` has hops.length+1
+   *  entries (last one belongs to `end`). Renders start -> hop -> … -> end. */
+  function renderChain(start: string | null, hops: string[], snrs: (number | null)[], end: string | null) {
+    const stops = [...hops, end];
+    return (
+      <div className="dd-trace-chain">
+        <span className="dd-trace-node">{resolveName(start)}</span>
+        {stops.map((id, i) => (
+          <span className="dd-trace-hop" key={i}>
+            <span className="dd-trace-arrow">→</span>
+            <span className="dd-trace-node">{resolveName(id)}</span>
+            <span className="dd-trace-snr">{fmtSnr(snrs[i])}</span>
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  // Honesty constraint (bridge): a direction whose SNR list disagreed with its
+  // route length was degraded to all-null. route_back empty AND every
+  // snr_back null means "no usable back data" — don't render an empty back
+  // line implying one hop of real signal. A direct 0-hop reply (route_back
+  // empty, one real snr_back entry) still renders.
+  const hasBack = !!traceResult && (traceResult.route_back.length > 0 || traceResult.snr_back.some(v => v != null));
 
   const n = data?.node;
 
@@ -124,6 +255,36 @@ export function NodeDetail({ nodeId, onClose, onDm }: {
                       </li>
                     ))}
                   </ul>
+                </section>
+              )}
+
+              {canTrace && (
+                <section className="dd-sec">
+                  <h4>Trace route</h4>
+                  <button className="tab" disabled={tracePending || cooldownS > 0} onClick={startTrace}>
+                    {tracePending ? "Tracing…" : cooldownS > 0 ? `cooling down ${cooldownS}s` : "Trace route"}
+                  </button>
+                  {tracePending && <div className="dd-trace-msg">Waiting for response… (up to ~90s)</div>}
+                  {traceTimedOut && <div className="dd-trace-msg warn">No response — node unreachable or asleep.</div>}
+                  {traceError && <div className="dd-trace-msg warn">{traceError}</div>}
+                  {traceResult && (
+                    traceResult.status !== "ok" ? (
+                      <div className="dd-trace-msg warn">{traceStatusLine(traceResult.status)}</div>
+                    ) : (
+                      <>
+                        <div className="dd-trace-dir">
+                          <span className="dd-trace-label">Towards</span>
+                          {renderChain(baseNode, traceResult.route, traceResult.snr_towards, traceResult.dest)}
+                        </div>
+                        {hasBack && (
+                          <div className="dd-trace-dir">
+                            <span className="dd-trace-label">Back</span>
+                            {renderChain(traceResult.dest, traceResult.route_back, traceResult.snr_back, baseNode)}
+                          </div>
+                        )}
+                      </>
+                    )
+                  )}
                 </section>
               )}
             </>

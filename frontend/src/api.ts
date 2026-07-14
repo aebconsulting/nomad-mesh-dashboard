@@ -10,7 +10,7 @@ export interface Node {
   chan_util: number | null; air_util_tx: number | null; uptime_s: number | null; sats: number | null;
   loc_source: string | null; temperature: number | null; humidity: number | null; pressure: number | null; env_ts: number | null;
 }
-export interface Status { ok: boolean; db_ok: boolean; last_msg_ts: number | null; last_node_update: number | null; own_nodes?: string[]; pinned_nodes?: string[]; base_node?: string | null; bridge: { ok: boolean; node: string | null } | null; now: number; }
+export interface Status { ok: boolean; db_ok: boolean; last_msg_ts: number | null; last_node_update: number | null; own_nodes?: string[]; pinned_nodes?: string[]; base_node?: string | null; traceroute?: boolean; bridge: { ok: boolean; node: string | null } | null; now: number; }
 export interface Stats { msgs_24h: number; in_24h: number; out_24h: number; ai_24h: number; }
 export interface Img { name: string; url: string; }
 export interface TelemetryPoint { metric: string; value: number; ts: number; }
@@ -24,6 +24,13 @@ export interface NeighborLink {
   from_id: string; from_name: string | null; from_lat: number; from_lon: number;
   to_id: string; to_name: string | null; to_lat: number; to_lon: number;
   snr: number | null; ts: number;
+}
+export interface TraceResult {
+  id: number; ts: number; dest: string; dest_name: string | null; hop_limit: number;
+  status: string;   // pending | ok | failed:<REASON> | timeout
+  route: string[]; snr_towards: (number | null)[];
+  route_back: string[]; snr_back: (number | null)[];
+  resp_ts: number | null; age_s: number;
 }
 
 export const OFFLINE_SECS = 7200; // 2 hours
@@ -142,6 +149,30 @@ export async function askAssistant(question: string): Promise<AssistantReply> {
   }
   return r.json();
 }
+
+export async function postTraceroute(to: string): Promise<{ ok: boolean; id: number }> {
+  const r = await fetch("/api/traceroute", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Mesh-Dashboard": "1" },
+    body: JSON.stringify({ to }),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => null);
+    const d = j?.detail;
+    let detail: string;
+    if (Array.isArray(d)) {
+      detail = d.map((x: any) => x?.msg ?? String(x)).join("; ");
+    } else if (d && typeof d === "object") {
+      // Bridge cooldown 429s carry {error, retry_after} — surface both.
+      detail = d.error ?? `traceroute failed (${r.status})`;
+      if (typeof d.retry_after === "number") detail += ` (retry in ${d.retry_after}s)`;
+    } else {
+      detail = d ?? `traceroute failed (${r.status})`;
+    }
+    throw new Error(detail);
+  }
+  return r.json();
+}
+export const getTraceroute = (id: number) => get<TraceResult>(`/api/traceroute/${id}`);
 
 /** Poll a fetcher every `ms`; keeps last good data and exposes staleness. */
 export function usePoll<T>(fn: () => Promise<T>, ms: number): { data: T | null; stale: boolean } {

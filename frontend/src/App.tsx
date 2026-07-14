@@ -7,7 +7,7 @@ import { MeshMap } from "./components/MeshMap";
 import { NodeDetail } from "./components/NodeDetail";
 import { LogPanel } from "./components/LogPanel";
 import { usePoll, fetchStatus, fetchStats, fetchFeed, fetchNodes, fetchLog, sendMessage } from "./api";
-import type { Msg, ReplyTarget } from "./api";
+import type { Msg, ReplyTarget, TraceResult } from "./api";
 
 // AI images gallery hidden until images can be generated/delivered over the mesh
 // (re-enable: restore the Images import, its usePoll, and the <Images> row below).
@@ -23,6 +23,9 @@ export default function App() {
   const [detailNode, setDetailNode] = useState<string | null>(null);
   const [focusNode, setFocusNode] = useState<string | null>(null); // node table → map: highlighted node
   const [replyingTo, setReplyingTo] = useState<ReplyTarget | null>(null);
+  // Held for Task 8 (MeshMap draws the hop chain); NodeDetail reports it via onTraceDone.
+  const [traceResult, setTraceResult] = useState<TraceResult | null>(null);
+  void traceResult;
 
   // Reply scope rule: a channel message replies as a broadcast on that channel
   // (dm null); a DM (inbound OR outbound — outbound DM rows store the PEER in
@@ -65,7 +68,17 @@ export default function App() {
         />
         <LogPanel items={log.data?.items ?? []} stale={log.stale} />
       </div>
-      {detailNode && <NodeDetail nodeId={detailNode} onClose={() => setDetailNode(null)} onDm={(id) => { setDmTarget(id); setDetailNode(null); }} />}
+      {detailNode && (
+        <NodeDetail
+          nodeId={detailNode}
+          onClose={() => { setDetailNode(null); setTraceResult(null); }}
+          onDm={(id) => { setDmTarget(id); setDetailNode(null); }}
+          canTrace={status.data?.traceroute ?? false}
+          nodes={nodes.data?.items ?? []}
+          baseNode={status.data?.base_node ?? null}
+          onTraceDone={setTraceResult}
+        />
+      )}
     </div>
   );
 }
