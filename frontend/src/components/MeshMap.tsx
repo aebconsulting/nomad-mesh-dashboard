@@ -3,7 +3,7 @@ import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Protocol } from "pmtiles";
 import { ago, isOffline, deviceType, roleLabel, fetchNeighbors } from "../api";
-import type { Node, NeighborLink } from "../api";
+import type { Node, NeighborLink, TraceResult } from "../api";
 
 // Register the pmtiles:// protocol once at module load so MapLibre can pull
 // vector tiles directly out of the offline PMTiles archive via HTTP range reads.
@@ -19,6 +19,10 @@ const FOCUS_LAYER = "node-focus";
 // A filter no node_id can match — the focus ring's "off" state. setFilter with
 // the real id turns it on; data refreshes (setData) never disturb a filter.
 const FOCUS_NONE: maplibregl.FilterSpecification = ["==", ["get", "node_id"], " "];
+// Traceroute hop-chain overlay (Task 8): its own source/layer, same pattern
+// as the neighbor links above.
+const TRACE_SOURCE = "trace-route";
+const TRACE_LAYER = "trace-route-line";
 
 // Color-codes each edge by SNR so weak links (likely to drop) stand out from
 // strong ones at a glance; a missing snr (older bridge payloads) gets a
@@ -116,13 +120,14 @@ function fitToPositioned(map: maplibregl.Map, nodes: Node[]) {
 
 // The command-center hero: an always-mounted offline map of the mesh.
 // Extracted from Nodes.tsx — same lifecycle guards, minus the map/table toggle.
-export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDetail, focusNode, onFocusClear, ownNodes }: {
+export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDetail, focusNode, onFocusClear, ownNodes, traceRoute, baseNode }: {
   nodes: Node[]; stale?: boolean; showOffline: boolean; onToggleOffline: () => void; onOpenDetail: (id: string) => void;
-  focusNode: string | null; onFocusClear: () => void; ownNodes: string[];
+  focusNode: string | null; onFocusClear: () => void; ownNodes: string[]; traceRoute: TraceResult | null; baseNode: string | null;
 }) {
   const [mapReady, setMapReady] = useState(false);
   const [showLinks, setShowLinks] = useState(false);
   const [focusMissing, setFocusMissing] = useState<string | null>(null); // focused node has no position
+  const [traceSkipped, setTraceSkipped] = useState(0); // trace hops that had no drawable position
   const mapRef = useRef<maplibregl.Map | null>(null);
   const divRef = useRef<HTMLDivElement | null>(null);
   const userMovedRef = useRef(false);       // user has panned/zoomed -> stop auto-refitting
@@ -133,6 +138,9 @@ export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDeta
   // closure every render — depping it would tear the map down each render).
   const onFocusClearRef = useRef(onFocusClear); onFocusClearRef.current = onFocusClear;
   const nodesRef = useRef(nodes); nodesRef.current = nodes;
+  // Same rationale for the trace effect: baseNode rarely changes, but reading
+  // it through a ref keeps that effect's deps at [traceRoute, mapReady] only.
+  const baseNodeRef = useRef(baseNode); baseNodeRef.current = baseNode;
   const positioned = nodes.filter(n => n.lat != null && n.lon != null && (showOffline || !isOffline(n)));
 
   // Owns the map's lifecycle: created once on mount, torn down on unmount.
@@ -193,6 +201,26 @@ export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDeta
             "line-width": 1.5,
             "line-opacity": 0.5,
             "line-color": LINK_COLOR_EXPR,
+          },
+        }, NODES_LAYER);
+        // Traceroute hop-chain overlay (Task 8): own source/layer, added AFTER
+        // the links layer with the same beforeId so it stacks above links but
+        // still under the node dots. Empty until a completed trace arrives
+        // from NodeDetail via the traceRoute prop.
+        map.addSource(TRACE_SOURCE, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+        map.addLayer({
+          id: TRACE_LAYER,
+          type: "line",
+          source: TRACE_SOURCE,
+          layout: {
+            "line-cap": "round",
+            "line-join": "round",
+          },
+          paint: {
+            "line-color": "#ffb020",
+            "line-width": 2.5,
+            "line-opacity": 0.9,
+            "line-dasharray": [2, 1.5],
           },
         }, NODES_LAYER);
         map.on("mouseenter", NODES_LAYER, (e) => {
@@ -337,6 +365,43 @@ export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDeta
     return () => { cancelled = true; clearInterval(id); };
   }, [showLinks, mapReady]);
 
+  // Draws/clears the traceroute overlay: an amber dashed line along the
+  // towards path (base -> intermediate hops -> dest) for a completed trace
+  // lifted up from NodeDetail. Node positions come through nodesRef/
+  // baseNodeRef (never in the dep list) so a live 15s node poll can't tear
+  // down or redraw the line; deps are [traceRoute, mapReady] only, exactly
+  // like the focus effect above. The "trace-route" source is only created
+  // inside the map's "load" handler, so this may run before it exists — it
+  // no-ops on a missing source and `mapReady` re-runs it once ready. Never
+  // moves the camera: the operator is already looking at the traced node.
+  useEffect(() => {
+    const map = mapRef.current;
+    const src = map?.getSource(TRACE_SOURCE) as maplibregl.GeoJSONSource | undefined;
+    if (!src) return; // source not ready yet; mapReady flipping true will retry
+    if (!traceRoute || traceRoute.status !== "ok") {
+      src.setData({ type: "FeatureCollection", features: [] });
+      setTraceSkipped(0);
+      return;
+    }
+    const ids = [baseNodeRef.current, ...traceRoute.route, traceRoute.dest].filter((x): x is string => !!x);
+    const coords: [number, number][] = [];
+    let skipped = 0;
+    for (const id of ids) {
+      const n = nodesRef.current.find(x => x.node_id === id);
+      if (!n || n.lat == null || n.lon == null) { skipped++; continue; }
+      coords.push([n.lon, n.lat]);
+    }
+    if (coords.length >= 2) {
+      src.setData({
+        type: "FeatureCollection",
+        features: [{ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} }],
+      });
+    } else {
+      src.setData({ type: "FeatureCollection", features: [] }); // can't place a real path — the NodeDetail hop chain still shows every hop
+    }
+    setTraceSkipped(skipped);
+  }, [traceRoute, mapReady]);
+
   // Manual escape hatch: clear the "user moved" flag (and any node selection)
   // and refit to all markers.
   const refit = () => {
@@ -353,6 +418,11 @@ export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDeta
         <span className="t">Mesh map</span><span className="n">{positioned.length} nodes positioned · offline basemap</span>
         {stale && <span className="tag stale">STALE</span>}
         {focusMissing && <span className="tag stale" title="This node has not reported a GPS position">{focusMissing}: no position</span>}
+        {traceRoute?.status === "ok" && traceSkipped > 0 && (
+          <span className="tag stale" title="These hops have no GPS position and aren't drawn on the map — see the full chain in the node panel">
+            {traceSkipped} hop{traceSkipped === 1 ? "" : "s"} not on map (no GPS)
+          </span>
+        )}
         <span className="right">
           <label className="offl"><input type="checkbox" checked={showOffline} onChange={onToggleOffline} /> offline</label>
           <button className="tab" onClick={refit} title="Refit map to all nodes">FIT</button>

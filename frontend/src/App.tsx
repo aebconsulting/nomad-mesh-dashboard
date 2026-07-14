@@ -23,9 +23,8 @@ export default function App() {
   const [detailNode, setDetailNode] = useState<string | null>(null);
   const [focusNode, setFocusNode] = useState<string | null>(null); // node table → map: highlighted node
   const [replyingTo, setReplyingTo] = useState<ReplyTarget | null>(null);
-  // Held for Task 8 (MeshMap draws the hop chain); NodeDetail reports it via onTraceDone.
+  // NodeDetail reports the terminal trace result here; MeshMap draws the hop chain.
   const [traceResult, setTraceResult] = useState<TraceResult | null>(null);
-  void traceResult;
 
   // Reply scope rule: a channel message replies as a broadcast on that channel
   // (dm null); a DM (inbound OR outbound — outbound DM rows store the PEER in
@@ -55,7 +54,11 @@ export default function App() {
             onSelectUser={setFocusNode}
           />
         </div>
-        <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)} onOpenDetail={setDetailNode} focusNode={focusNode} onFocusClear={() => setFocusNode(null)} ownNodes={status.data?.pinned_nodes ?? status.data?.own_nodes ?? []} />
+        <MeshMap
+          nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)} onOpenDetail={setDetailNode}
+          focusNode={focusNode} onFocusClear={() => setFocusNode(null)} ownNodes={status.data?.pinned_nodes ?? status.data?.own_nodes ?? []}
+          traceRoute={traceResult} baseNode={status.data?.base_node ?? null}
+        />
       </div>
       <div className="lower-grid">
         <Nodes
