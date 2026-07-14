@@ -30,9 +30,10 @@ function cmpNodes(a: Node, b: Node, key: SortKey, dir: 1 | -1): number {
 }
 
 // Table-only node roster (the map lives in MeshMap.tsx, the command-center hero).
-export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, onToggleOffline, focusNode }: {
+export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, onToggleOffline, focusNode, ownNodes, baseNode }: {
   items: Node[]; stale?: boolean; onSelectNode: (id: string) => void; onOpenDetail: (id: string) => void;
   showOffline: boolean; onToggleOffline: () => void; focusNode: string | null;
+  ownNodes: string[]; baseNode: string | null;
 }) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "last_heard", dir: -1 });
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -44,8 +45,14 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
       ?.scrollIntoView({ block: "nearest" });
   }, [focusNode]);
 
-  const shown = showOffline ? items : items.filter(n => !isOffline(n));
-  const rows = [...shown].sort((a, b) => cmpNodes(a, b, sort.key, sort.dir));
+  // The operator's own radios are pinned above the sort and EXEMPT from the
+  // offline filter: a radio you own should never silently vanish from the list
+  // (the base is serially attached to the bridge; a stale self-entry just means
+  // it hasn't transmitted lately). Base first, then other own, then the mesh.
+  const own = new Set(ownNodes);
+  const shown = showOffline ? items : items.filter(n => own.has(n.node_id) || !isOffline(n));
+  const rank = (n: Node) => n.node_id === baseNode ? 0 : own.has(n.node_id) ? 1 : 2;
+  const rows = [...shown].sort((a, b) => (rank(a) - rank(b)) || cmpNodes(a, b, sort.key, sort.dir));
 
   const onSort = (key: SortKey) => setSort(s => s.key === key ? { key, dir: (s.dir === 1 ? -1 : 1) } : { key, dir: 1 });
   const caret = (key: SortKey) => sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : "";
@@ -80,6 +87,8 @@ export function Nodes({ items, stale, onSelectNode, onOpenDetail, showOffline, o
                 <tr key={n.node_id} data-node={n.node_id} className={n.node_id === focusNode ? "row-focus" : undefined}>
                   <td>
                     <button className="nm-btn" onClick={() => onSelectNode(n.node_id)} title="DM this node + show it on the map">{n.short_name ?? n.node_id}</button>
+                    {n.node_id === baseNode && <span className="tag own-tag" title="The radio the bridge is connected to over serial">base</span>}
+                    {n.node_id !== baseNode && own.has(n.node_id) && <span className="tag own-tag" title="One of your own radios">mine</span>}
                     {n.long_name && n.long_name !== n.short_name && <div className="nm-sub">{n.long_name}</div>}
                   </td>
                   <td className="col-type">{deviceType(n.hw_model)}</td>

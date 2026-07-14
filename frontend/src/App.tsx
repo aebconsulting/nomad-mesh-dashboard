@@ -52,7 +52,7 @@ export default function App() {
             onSelectUser={setFocusNode}
           />
         </div>
-        <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)} onOpenDetail={setDetailNode} focusNode={focusNode} onFocusClear={() => setFocusNode(null)} />
+        <MeshMap nodes={nodes.data?.items ?? []} stale={nodes.stale} showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)} onOpenDetail={setDetailNode} focusNode={focusNode} onFocusClear={() => setFocusNode(null)} ownNodes={status.data?.own_nodes ?? []} />
       </div>
       <div className="lower-grid">
         <Nodes
@@ -61,6 +61,7 @@ export default function App() {
           onOpenDetail={setDetailNode}
           showOffline={showOffline} onToggleOffline={() => setShowOffline(v => !v)}
           focusNode={focusNode}
+          ownNodes={status.data?.own_nodes ?? []} baseNode={status.data?.base_node ?? null}
         />
         <LogPanel items={log.data?.items ?? []} stale={log.stale} />
       </div>

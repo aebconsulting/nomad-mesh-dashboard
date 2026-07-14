@@ -135,6 +135,7 @@ header {
 .out .who { color: var(--out); }
 .aiMsg .who { color: var(--ai); }
 .msg .body { min-width: 0; }
+.own-tag { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); margin-left: 6px; vertical-align: 1px; }
 .role-help { cursor: help; text-decoration: underline dotted color-mix(in srgb, var(--muted) 55%, transparent); text-underline-offset: 3px; }
 .nm-sub { font-size: 11px; color: var(--faint); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 tr.row-focus td { background: color-mix(in srgb, var(--accent) 10%, transparent); }

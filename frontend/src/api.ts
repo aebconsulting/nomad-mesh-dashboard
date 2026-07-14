@@ -10,7 +10,7 @@ export interface Node {
   chan_util: number | null; air_util_tx: number | null; uptime_s: number | null; sats: number | null;
   loc_source: string | null; temperature: number | null; humidity: number | null; pressure: number | null; env_ts: number | null;
 }
-export interface Status { ok: boolean; db_ok: boolean; last_msg_ts: number | null; last_node_update: number | null; own_nodes?: string[]; bridge: { ok: boolean; node: string | null } | null; now: number; }
+export interface Status { ok: boolean; db_ok: boolean; last_msg_ts: number | null; last_node_update: number | null; own_nodes?: string[]; base_node?: string | null; bridge: { ok: boolean; node: string | null } | null; now: number; }
 export interface Stats { msgs_24h: number; in_24h: number; out_24h: number; ai_24h: number; }
 export interface Img { name: string; url: string; }
 export interface TelemetryPoint { metric: string; value: number; ts: number; }

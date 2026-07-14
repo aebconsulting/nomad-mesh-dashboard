@@ -312,6 +312,7 @@ def status():
             "db_ok": db_ok,
             "last_msg_ts": last_msg, "last_node_update": last_node,
             "own_nodes": sorted(_OWN_NODES),
+            "base_node": BASE_NODE_ID or None,
             "bridge": bridge, "now": time.time()}
 
 class SendReq(BaseModel):

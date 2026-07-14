@@ -36,7 +36,7 @@ const LINK_COLOR_EXPR: maplibregl.ExpressionSpecification = [
 ];
 
 type NodeProps = {
-  node_id: string; label: string; battery: number | null; ago: string;
+  node_id: string; label: string; battery: number | null; ago: string; own: boolean;
   hw_model: string | null; role: string | null; voltage: number | null;
   temperature: number | null; humidity: number | null; pressure: number | null;
 };
@@ -72,14 +72,14 @@ async function loadStyle(): Promise<maplibregl.StyleSpecification> {
 }
 
 // Builds the marker source data + the bounds-fit target from the positioned nodes.
-function toFeatureCollection(nodes: Node[]): GeoJSON.FeatureCollection<GeoJSON.Point, NodeProps> {
+function toFeatureCollection(nodes: Node[], own: Set<string>): GeoJSON.FeatureCollection<GeoJSON.Point, NodeProps> {
   return {
     type: "FeatureCollection",
     features: nodes.map((n): NodeFeature => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [n.lon as number, n.lat as number] },
       properties: {
-        node_id: n.node_id, label: n.short_name ?? n.node_id, battery: n.battery, ago: ago(n.last_heard),
+        node_id: n.node_id, label: n.short_name ?? n.node_id, battery: n.battery, ago: ago(n.last_heard), own: own.has(n.node_id),
         hw_model: n.hw_model, role: n.role, voltage: n.voltage,
         temperature: n.temperature, humidity: n.humidity, pressure: n.pressure,
       },
@@ -116,9 +116,9 @@ function fitToPositioned(map: maplibregl.Map, nodes: Node[]) {
 
 // The command-center hero: an always-mounted offline map of the mesh.
 // Extracted from Nodes.tsx — same lifecycle guards, minus the map/table toggle.
-export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDetail, focusNode, onFocusClear }: {
+export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDetail, focusNode, onFocusClear, ownNodes }: {
   nodes: Node[]; stale?: boolean; showOffline: boolean; onToggleOffline: () => void; onOpenDetail: (id: string) => void;
-  focusNode: string | null; onFocusClear: () => void;
+  focusNode: string | null; onFocusClear: () => void; ownNodes: string[];
 }) {
   const [mapReady, setMapReady] = useState(false);
   const [showLinks, setShowLinks] = useState(false);
@@ -172,11 +172,13 @@ export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDeta
           type: "circle",
           source: NODES_SOURCE,
           paint: {
-            "circle-radius": 5,
+            // Own radios get a near-white ring so "which dot is mine" reads at
+            // a glance; everyone else keeps the thin dark outline.
+            "circle-radius": ["case", ["get", "own"], 6, 5],
             "circle-color": "#ffb020",
             "circle-opacity": 0.9,
-            "circle-stroke-color": "#0a0e13",
-            "circle-stroke-width": 1,
+            "circle-stroke-color": ["case", ["get", "own"], "#e6edf3", "#0a0e13"],
+            "circle-stroke-width": ["case", ["get", "own"], 2, 1],
           },
         });
         // Neighbor-link edges live on their own source/layer, inserted BEFORE the
@@ -261,7 +263,7 @@ export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDeta
     if (!map || !mapReady) return;
     const src = map.getSource(NODES_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (!src) return;
-    src.setData(toFeatureCollection(positioned));
+    src.setData(toFeatureCollection(positioned, new Set(ownNodes)));
     // Auto-fit when the positioned-node COUNT grows (first nodes appearing, or a
     // NEW positioned node showing up) as long as the user hasn't taken control.
     // Never refits on a count that stays flat or shrinks, so a live poll can't
@@ -270,7 +272,7 @@ export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDeta
       fitToPositioned(map, positioned);
     }
     prevCountRef.current = positioned.length;
-  }, [nodes, showOffline, mapReady]);
+  }, [nodes, showOffline, mapReady, ownNodes]);
 
   // Node-table → map focus: ring the picked node, fly to it, and pin its popup.
   // Deps are only [focusNode, mapReady] — node data comes through nodesRef so a
@@ -299,7 +301,7 @@ export function MeshMap({ nodes, stale, showOffline, onToggleOffline, onOpenDeta
     const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: false })
       .setLngLat([n.lon, n.lat])
       .setHTML(popupHtml({
-        node_id: n.node_id, label: n.short_name ?? n.node_id, battery: n.battery, ago: ago(n.last_heard),
+        node_id: n.node_id, label: n.short_name ?? n.node_id, battery: n.battery, ago: ago(n.last_heard), own: false,
         hw_model: n.hw_model, role: n.role, voltage: n.voltage,
         temperature: n.temperature, humidity: n.humidity, pressure: n.pressure,
       }))
