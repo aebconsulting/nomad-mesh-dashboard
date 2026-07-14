@@ -27,6 +27,13 @@ OWN_NODE_IDS = os.environ.get("OWN_NODE_IDS", "")
 _OWN_NODES = {x.strip() for x in OWN_NODE_IDS.split(",") if x.strip()}
 if BASE_NODE_ID:
     _OWN_NODES.add(BASE_NODE_ID)
+# PINNED_NODE_IDS: extra radios to pin/tag/ring in the UI WITHOUT the own-node
+# signal semantics. OWN_NODE_IDS should stay CO-LOCATED radios only (they always
+# read strong, so they're excluded from the nearest-router vital and flagged for
+# the analyst); a MOBILE radio belongs here instead — when it's out in the field
+# its SNR/hops are real reach signal that must keep feeding the vitals.
+PINNED_NODE_IDS = os.environ.get("PINNED_NODE_IDS", "")
+_PINNED_NODES = _OWN_NODES | {x.strip() for x in PINNED_NODE_IDS.split(",") if x.strip()}
 FEED_CAP = 500
 IMG_RE = re.compile(r"^[A-Za-z0-9._-]+\.(png|jpe?g|webp|gif)$")
 DEST_RE = re.compile(r"^![0-9a-fA-F]{8}$")
@@ -312,6 +319,7 @@ def status():
             "db_ok": db_ok,
             "last_msg_ts": last_msg, "last_node_update": last_node,
             "own_nodes": sorted(_OWN_NODES),
+            "pinned_nodes": sorted(_PINNED_NODES),
             "base_node": BASE_NODE_ID or None,
             "bridge": bridge, "now": time.time()}
 
