@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { sendMessage, isOffline } from "../api";
+import { sendMessage, shortenUrl, isOffline } from "../api";
 import type { Node, ReplyTarget } from "../api";
 
 type Opt = { id: string; label: string; offline?: boolean };
@@ -14,6 +14,7 @@ export function SendBox({ nodes, value, onChange, showOffline, replyingTo, onCle
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);             // highlighted option index for keyboard nav
   const [note, setNote] = useState<string | null>(null);
+  const [shortening, setShortening] = useState(false);
   const clearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const comboRef = useRef<HTMLDivElement | null>(null);
   const bytes = new TextEncoder().encode(text).length;
@@ -75,8 +76,34 @@ export function SendBox({ nodes, value, onChange, showOffline, replyingTo, onCle
     }
   };
 
+  // A pasted URL can eat most of the 200-byte mesh budget — offer a one-tap
+  // shorten (backend proxies is.gd/TinyURL; the CSP blocks calling them direct).
+  const longUrl = text.match(/https?:\/\/\S{20,}/)?.[0] ?? null;
+  const shorten = async () => {
+    if (!longUrl || shortening) return;
+    setShortening(true);
+    setNote("shortening link…");
+    try {
+      const short = await shortenUrl(longUrl);
+      setText(t => t.replace(longUrl, short));
+      setNote("link shortened");
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "shorten failed");
+    } finally {
+      setShortening(false);
+    }
+  };
+
   return (
     <form className="send" onSubmit={submit} autoComplete="off">
+      <div className="send-tools">
+        <a className="tool-link" href="https://www.meshpic.org/" target="_blank" rel="noopener noreferrer"
+           title="Upload a photo on meshpic (opens in a new tab) — you get a short link that fits in a mesh message; images auto-delete after 24h; viewers need internet">📷 image link ↗</a>
+        {longUrl && (
+          <button type="button" className="tool-link" disabled={shortening} onClick={shorten}
+                  title="Replace the long link in your message with a short one (via is.gd) so it fits the 200-byte budget">✂ shorten link</button>
+        )}
+      </div>
       {replyingTo && (
         <div className="reply-strip">
           <span className="reply-quote">↳ Replying to {replyingTo.name}: {replyingTo.text.slice(0, 60)}</span>

@@ -244,6 +244,13 @@ tr.row-focus .nm-btn { color: var(--accent); }
   font-family: var(--mono); font-size: 12.5px; letter-spacing: .08em; cursor: pointer;
   background: var(--accent); color: var(--bg-deep); border: 0; padding: 11px 18px; border-radius: 2px; font-weight: 700;
 }
+.send-tools { display: flex; gap: 12px; width: 100%; margin-bottom: 6px; }
+.tool-link {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--muted);
+  background: none; border: 0; padding: 0; cursor: pointer; text-decoration: none;
+}
+.tool-link:hover { color: var(--accent); text-decoration: underline; }
+.tool-link:disabled { opacity: .5; cursor: default; }
 .reply-strip { display: flex; align-items: center; gap: 8px; width: 100%; font-size: 12px; color: var(--muted); border-left: 2px solid var(--accent); padding: 2px 8px; margin-bottom: 6px; }
 .reply-strip .reply-quote { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .reply-x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 13px; }

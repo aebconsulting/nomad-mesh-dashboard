@@ -116,6 +116,19 @@ export async function sendMessage(text: string, channel: number, to: string | nu
   }
 }
 
+export async function shortenUrl(url: string): Promise<string> {
+  const r = await fetch("/api/shorten", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Mesh-Dashboard": "1" },
+    body: JSON.stringify({ url }),
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => null);
+    const d = j?.detail;
+    throw new Error(Array.isArray(d) ? d.map((x: any) => x?.msg ?? String(x)).join("; ") : d ?? `shorten failed (${r.status})`);
+  }
+  return (await r.json()).short;
+}
+
 export async function askAssistant(question: string): Promise<AssistantReply> {
   const r = await fetch("/api/assistant", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Mesh-Dashboard": "1" },

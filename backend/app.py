@@ -1,5 +1,6 @@
 """NOMAD Mesh Dashboard backend. Reads memory.db READ-ONLY; sends via the bridge API."""
 import ipaddress, json, os, re, sqlite3, threading, time
+from urllib.parse import quote
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -421,6 +422,63 @@ def send(body: SendReq, request: Request):
             pass
         raise HTTPException(r.status_code, detail)
     return {"ok": True}
+
+# ---------- link shortener ----------
+# Mesh messages cap at ~200 bytes, so a pasted URL often IS the whole budget.
+# The browser can't call is.gd itself (CSP connect-src 'self'), so this proxies:
+# validate -> is.gd (free, keyless) -> TinyURL fallback. Internet-dependent by
+# nature; degrades to an honest 502 offline. We never fetch the user's URL —
+# it rides as a query param to the shortener, so there's no SSRF surface.
+class ShortenReq(BaseModel):
+    url: str = Field(min_length=10, max_length=2000)
+
+    @field_validator("url")
+    @classmethod
+    def sane_url(cls, v):
+        v = v.strip()
+        if not re.match(r"^https?://", v, re.IGNORECASE):
+            raise ValueError("url must start with http:// or https://")
+        if any(ord(ch) < 33 or ord(ch) == 127 for ch in v):
+            raise ValueError("url must not contain spaces or control characters")
+        return v
+
+_SHORTENERS = (
+    ("is.gd", "https://is.gd/create.php?format=simple&url={}"),
+    ("tinyurl", "https://tinyurl.com/api-create.php?url={}"),
+)
+_shorten_times: dict[str, list[float]] = {}
+_shorten_lock = threading.Lock()
+
+@app.post("/api/shorten")
+def shorten(body: ShortenReq, request: Request):
+    if request.headers.get("x-mesh-dashboard") != "1":
+        raise HTTPException(403, "missing X-Mesh-Dashboard header")
+    ip = client_ip(request)
+    now = time.time()
+    with _shorten_lock:
+        for key in list(_shorten_times.keys()):
+            kept = [t for t in _shorten_times[key] if now - t < 60]
+            if kept:
+                _shorten_times[key] = kept
+            else:
+                del _shorten_times[key]
+        times = _shorten_times.get(ip, [])
+        if len(times) >= 6:
+            raise HTTPException(429, "rate limited: max 6 shortens/minute")
+        times.append(now)
+        _shorten_times[ip] = times
+    for svc, tpl in _SHORTENERS:
+        try:
+            r = httpx.get(tpl.format(quote(body.url, safe="")), timeout=8)
+            if r.status_code == 200:
+                short = r.text.strip()
+                # A shortener that echoes an error page instead of a URL must not
+                # reach the message box — accept only a plausible short http(s) URL.
+                if re.fullmatch(r"https?://\S{1,80}", short) and len(short) < len(body.url):
+                    return {"short": short, "service": svc}
+        except Exception:
+            continue
+    raise HTTPException(502, "shortener unreachable — no internet, or both services down")
 
 # ---------- AI mesh-analyst ----------
 # Advisory-only: reads a PUBLIC-ONLY context pack from memory.db and asks the

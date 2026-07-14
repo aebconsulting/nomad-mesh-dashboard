@@ -492,3 +492,59 @@ def test_send_reply_id_bounds(client, monkeypatch):
         r = c.post("/api/send", json={"text": "hi", "channel": 0, "reply_id": bad},
                    headers=CSRF_HEADERS)
         assert r.status_code == 422, bad
+
+
+# ---------- /api/shorten ----------
+
+class _ShortResp:
+    def __init__(self, status_code, text):
+        self.status_code = status_code; self.text = text
+
+def test_shorten_requires_csrf(client):
+    c, _ = client
+    r = c.post("/api/shorten", json={"url": "https://example.com/some/long/path"})
+    assert r.status_code == 403
+
+def test_shorten_validates_url(client):
+    c, _ = client
+    for bad in ("ftp://x.com/aaaa", "javascript:alert(1)//aaaa", "https://exa mple.com/aa", "short"):
+        r = c.post("/api/shorten", json={"url": bad}, headers=CSRF_HEADERS)
+        assert r.status_code == 422, bad
+
+def test_shorten_uses_is_gd(client, monkeypatch):
+    c, m = client
+    calls = []
+    def fake_get(url, timeout=None):
+        calls.append(url)
+        return _ShortResp(200, "https://is.gd/abc12" + chr(10))
+    monkeypatch.setattr(m.httpx, "get", fake_get)
+    r = c.post("/api/shorten", json={"url": "https://example.com/a/very/long/path?with=stuff"}, headers=CSRF_HEADERS)
+    assert r.status_code == 200
+    assert r.json() == {"short": "https://is.gd/abc12", "service": "is.gd"}
+    assert "is.gd/create.php" in calls[0] and "https%3A%2F%2Fexample.com" in calls[0]
+
+def test_shorten_falls_back_to_tinyurl(client, monkeypatch):
+    c, m = client
+    def fake_get(url, timeout=None):
+        if "is.gd" in url:
+            raise RuntimeError("down")
+        return _ShortResp(200, "https://tinyurl.com/xyz")
+    monkeypatch.setattr(m.httpx, "get", fake_get)
+    r = c.post("/api/shorten", json={"url": "https://example.com/a/very/long/path"}, headers=CSRF_HEADERS)
+    assert r.status_code == 200 and r.json()["service"] == "tinyurl"
+
+def test_shorten_502_when_all_down(client, monkeypatch):
+    c, m = client
+    def fake_get(url, timeout=None):
+        raise RuntimeError("offline")
+    monkeypatch.setattr(m.httpx, "get", fake_get)
+    r = c.post("/api/shorten", json={"url": "https://example.com/a/very/long/path"}, headers=CSRF_HEADERS)
+    assert r.status_code == 502
+
+def test_shorten_rejects_error_page_response(client, monkeypatch):
+    c, m = client
+    def fake_get(url, timeout=None):
+        return _ShortResp(200, "Error: something went wrong")
+    monkeypatch.setattr(m.httpx, "get", fake_get)
+    r = c.post("/api/shorten", json={"url": "https://example.com/a/very/long/path"}, headers=CSRF_HEADERS)
+    assert r.status_code == 502
