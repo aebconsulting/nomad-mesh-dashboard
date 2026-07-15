@@ -35,6 +35,9 @@ if BASE_NODE_ID:
 PINNED_NODE_IDS = os.environ.get("PINNED_NODE_IDS", "")
 _PINNED_NODES = _OWN_NODES | {x.strip() for x in PINNED_NODE_IDS.split(",") if x.strip()}
 FEED_CAP = 500
+# Meridian's "online/heard" convention: a node counts as current if heard within
+# 2h. Derived direct-link edges use the same window -- a link is a claim about NOW.
+ONLINE_WINDOW_S = 7200
 IMG_RE = re.compile(r"^[A-Za-z0-9._-]+\.(png|jpe?g|webp|gif)$")
 DEST_RE = re.compile(r"^![0-9a-fA-F]{8}$")
 # Map assets are addressed by relative path (fonts have spaces, e.g. "Noto Sans Regular").
@@ -351,16 +354,28 @@ def neighbors_links(since: float = 0.0):
         "JOIN nodes n2 ON n2.node_id = e.neighbor_id "
         "WHERE e.rn = 1 AND n1.lat IS NOT NULL AND n2.lat IS NOT NULL", (window,))
     # Derived direct-neighbor edges: the base hears every hops==0 node directly, so draw
-    # base -> node with the base's receive SNR (nodes.snr). Reliable + immediate, so the
-    # topology shows the base's star now, before NEIGHBORINFO/per-packet capture fills in.
+    # base -> node with the base's receive SNR. The star comes from the MERGED node view
+    # (bridge + MeshMonitor overlay -- same source as /api/nodes) and only for nodes heard
+    # within the online window: a direct link is a claim about NOW, so a node last heard
+    # a day ago must not keep its edge (pre-v32 the star was un-windowed and bridge-only,
+    # which is exactly why the Links overlay showed neither new nor current links).
     derived = []
     if BASE_NODE_ID:
-        derived = q(
-            "SELECT b.node_id AS from_id, b.short_name AS from_name, b.lat AS from_lat, b.lon AS from_lon, "
-            "n.node_id AS to_id, n.short_name AS to_name, n.lat AS to_lat, n.lon AS to_lon, "
-            "n.snr, n.last_heard AS ts "
-            "FROM nodes b JOIN nodes n ON n.hops = 0 AND n.node_id != b.node_id AND n.lat IS NOT NULL "
-            "WHERE b.node_id = ? AND b.lat IS NOT NULL", (BASE_NODE_ID,))
+        node_rows = q("SELECT node_id, short_name, lat, lon, snr, hops, last_heard FROM nodes")
+        merged, _ = _merge_mm(node_rows)
+        base = next((r for r in merged if r["node_id"] == BASE_NODE_ID), None)
+        fresh_after = time.time() - ONLINE_WINDOW_S
+        if base and base.get("lat") is not None and base.get("lon") is not None:
+            derived = [
+                {"from_id": base["node_id"], "from_name": base.get("short_name"),
+                 "from_lat": base["lat"], "from_lon": base["lon"],
+                 "to_id": r["node_id"], "to_name": r.get("short_name"),
+                 "to_lat": r["lat"], "to_lon": r["lon"],
+                 "snr": r.get("snr"), "ts": r.get("last_heard")}
+                for r in merged
+                if (r["node_id"] != BASE_NODE_ID and r.get("hops") == 0
+                    and r.get("lat") is not None and r.get("lon") is not None
+                    and (r.get("last_heard") or 0) > fresh_after)]
     # Explicit neighbors-table edges win over the derived star for the same pair.
     merged = {(e["from_id"], e["to_id"]): e for e in derived}
     for e in table_edges:

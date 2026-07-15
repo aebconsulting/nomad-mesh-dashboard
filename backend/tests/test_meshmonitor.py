@@ -143,6 +143,34 @@ def test_detail_synthesized_for_mm_only_node(client, monkeypatch):
     assert c.get("/api/nodes/!00000000/detail").status_code == 404
 
 
+def test_derived_links_windowed_and_mm_fresh(client, monkeypatch):
+    """The base star only links nodes heard within the online window, and the
+    MeshMonitor overlay both revives stale bridge rows and adds MM-only nodes."""
+    c, m = client
+    now = time.time()
+    con = sqlite3.connect(m.DB_PATH)
+    con.execute("INSERT INTO nodes(node_id,short_name,lat,lon,snr,hops,last_heard,updated) "
+                "VALUES('!57a1e000','STAL',34.2,-84.1,5.0,0,?,?)", (now - 90000, now - 90000))
+    con.commit(); con.close()
+    monkeypatch.setattr(m, "BASE_NODE_ID", "!bb22cc33")
+    # MeshMonitor unset: fresh direct node keeps its edge, day-old one loses it.
+    items = c.get("/api/neighbors").json()["items"]
+    pairs = {(e["from_id"], e["to_id"]) for e in items}
+    assert ("!bb22cc33", "!aa11bb22") in pairs
+    assert ("!bb22cc33", "!57a1e000") not in pairs
+    # A fresh MeshMonitor sighting revives the stale row (db position reused),
+    # and an MM-only positioned direct node gets a star edge of its own.
+    payload = [mm_node("!57a1e000", "STAL", now - 30, hops=0),
+               mm_node("!0000beef", "MMFR", now - 10, hops=0, lat=34.3, lon=-84.0)]
+    wire_mm(monkeypatch, m, payload)
+    items = c.get("/api/neighbors").json()["items"]
+    pairs = {(e["from_id"], e["to_id"]) for e in items}
+    assert ("!bb22cc33", "!57a1e000") in pairs
+    assert ("!bb22cc33", "!0000beef") in pairs
+    beef = next(e for e in items if e["to_id"] == "!0000beef")
+    assert beef["to_lat"] == 34.3 and beef["ts"] == pytest.approx(now - 10)
+
+
 def test_status_reports_meshmonitor_flag(client, monkeypatch):
     c, m = client
     wire_mm(monkeypatch, m, [mm_node("!deadbeef", "NEWN", time.time())])
