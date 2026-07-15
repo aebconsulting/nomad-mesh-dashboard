@@ -163,6 +163,109 @@ def _has_traceroutes():
     _tr_flag_cache = (val, now)
     return val
 
+# --- MeshMonitor enrichment (Phase 3, read-only) -------------------------------
+# MeshMonitor holds the radio's DIRECT stream, so it logs a sighting for every
+# packet header the radio hears -- including encrypted foreign-channel traffic
+# that is never re-forwarded down the virtual-node feed the bridge listens on.
+# That makes its lastHeard the closest thing to the radio's own reality (live
+# measurement 2026-07-15: MeshMonitor 95 nodes heard in 2h vs bridge 29). When
+# MESHMONITOR_API_URL is set (e.g. http://meshmonitor-eval:3001), /api/nodes
+# overlays the fresher lastHeard/snr/hops onto bridge rows and appends nodes
+# only MeshMonitor knows. Unset, unreachable, or malformed -> bridge rows only,
+# never a 500. The URL is read per-call so tests and env-only redeploys work.
+_MM_TTL = 20
+_mm_cache = None  # (nodes_by_id or None, fetched_at); None value = MM unavailable
+
+def _mm_url():
+    return os.environ.get("MESHMONITOR_API_URL", "").rstrip("/")
+
+def _num(v):
+    """Numeric or None. bool is an int subclass and MUST NOT pass (a hostile
+    true/false in a JSON field would otherwise compare as 1/0 and win merges)."""
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+def _mm_nodes():
+    """MeshMonitor's node list keyed by '!hex' id, briefly cached. None means
+    disabled or unavailable; {} means reachable but empty. Failures are cached
+    too, so a down MeshMonitor costs one 3s attempt per TTL, not per poll."""
+    global _mm_cache
+    url = _mm_url()
+    if not url:
+        return None
+    now = time.time()
+    if _mm_cache and now - _mm_cache[1] < _MM_TTL:
+        return _mm_cache[0]
+    data = None
+    try:
+        raw = httpx.get(url + "/api/nodes", timeout=3).json()
+        raw = raw if isinstance(raw, list) else raw.get("nodes", [])
+        if not isinstance(raw, list):
+            raise ValueError("nodes payload is not a list")
+        data = {}
+        for n in raw:
+            if not isinstance(n, dict):
+                continue
+            nid = (n.get("user") or {}).get("id") or ""
+            if isinstance(nid, str) and DEST_RE.fullmatch(nid):
+                data[nid] = n
+    except Exception:
+        data = None
+    _mm_cache = (data, now)
+    return data
+
+# Superset of the /api/nodes row keys (plus detail-only rssi/via_mqtt) so a
+# MeshMonitor-only node renders through the same frontend paths as bridge rows.
+_NODE_KEYS = ("node_id", "short_name", "long_name", "lat", "lon", "battery", "snr",
+              "hops", "last_heard", "updated", "hw_model", "role", "altitude",
+              "voltage", "chan_util", "air_util_tx", "uptime_s", "rssi", "via_mqtt",
+              "sats", "loc_source", "temperature", "humidity", "pressure", "env_ts")
+
+def _mm_to_row(nid, m):
+    u = m.get("user") or {}
+    dm = m.get("deviceMetrics") or {}
+    pos = m.get("position") or {}
+    if not isinstance(u, dict): u = {}
+    if not isinstance(dm, dict): dm = {}
+    if not isinstance(pos, dict): pos = {}
+    row = {k: None for k in _NODE_KEYS}
+    row.update({
+        "node_id": nid,
+        "short_name": u.get("shortName") if isinstance(u.get("shortName"), str) else None,
+        "long_name": u.get("longName") if isinstance(u.get("longName"), str) else None,
+        "lat": _num(pos.get("latitude")), "lon": _num(pos.get("longitude")),
+        "altitude": _num(pos.get("altitude")),
+        "battery": _num(dm.get("batteryLevel")), "voltage": _num(dm.get("voltage")),
+        "chan_util": _num(dm.get("channelUtilization")),
+        "air_util_tx": _num(dm.get("airUtilTx")), "uptime_s": _num(dm.get("uptimeSeconds")),
+        "snr": _num(m.get("snr")), "hops": _num(m.get("lastMessageHops")),
+        "last_heard": _num(m.get("lastHeard")),
+    })
+    return row
+
+def _merge_mm(rows):
+    """Overlay MeshMonitor sightings onto bridge rows in place; return the
+    (possibly extended) list plus whether MeshMonitor answered at all."""
+    mm_map = _mm_nodes()
+    if mm_map is None:
+        return rows, False
+    pending = dict(mm_map)  # never mutate the cached dict
+    for r in rows:
+        m = pending.pop(r["node_id"], None)
+        if not m:
+            continue
+        lh = _num(m.get("lastHeard"))
+        if lh is None or lh <= (r["last_heard"] or 0):
+            continue
+        r["last_heard"] = lh
+        snr, hops = _num(m.get("snr")), _num(m.get("lastMessageHops"))
+        if snr is not None:
+            r["snr"] = snr
+        if hops is not None:
+            r["hops"] = int(hops)
+    rows.extend(_mm_to_row(nid, m) for nid, m in pending.items())
+    rows.sort(key=lambda r: r["last_heard"] or 0, reverse=True)
+    return rows, True
+
 @app.get("/api/feed")
 def feed(since: float = 0.0, limit: int = Query(100, ge=1, le=FEED_CAP)):
     has_ack = _msg_log_has_ack()
@@ -196,8 +299,11 @@ def nodes():
              "         ROW_NUMBER() OVER (PARTITION BY node_id ORDER BY ts DESC) rn FROM env_log"
              ") e ON e.node_id = n.node_id AND e.rn = 1 "
              "ORDER BY n.last_heard DESC")
+    # snapshot_ts stays bridge-only: it answers "how stale is the bridge's view",
+    # which the MeshMonitor overlay must not mask.
     snap = max((r["updated"] or 0 for r in rows), default=None)
-    return {"items": rows, "snapshot_ts": snap}
+    rows, mm_ok = _merge_mm(rows)
+    return {"items": rows, "snapshot_ts": snap, "meshmonitor": mm_ok}
 
 @app.get("/api/nodes/{node_id}/detail")
 def node_detail(node_id: str):
@@ -207,7 +313,14 @@ def node_detail(node_id: str):
         raise HTTPException(422, "invalid node id")
     node = q("SELECT * FROM nodes WHERE node_id = ?", (node_id,))
     if not node:
-        raise HTTPException(404, "node not found")
+        # A node the bridge has never seen can still be a live MeshMonitor
+        # sighting (its row is in the table now) -- synthesize a detail view
+        # instead of 404ing the drawer the table itself offered.
+        m = (_mm_nodes() or {}).get(node_id)
+        if not m:
+            raise HTTPException(404, "node not found")
+        return {"node": _mm_to_row(node_id, m), "telemetry": {}, "weather": [],
+                "meshmonitor_only": True}
     # Latest value per (kind, metric) for this node.
     tele = q("SELECT kind, metric, value, ts FROM telemetry WHERE node_id = ? AND ts = ("
              "  SELECT MAX(t2.ts) FROM telemetry t2 WHERE t2.node_id = telemetry.node_id "
@@ -340,6 +453,7 @@ def status():
             "pinned_nodes": sorted(_PINNED_NODES),
             "base_node": BASE_NODE_ID or None,
             "traceroute": _has_traceroutes(),
+            "meshmonitor": _mm_nodes() is not None,
             "bridge": bridge, "now": time.time()}
 
 class SendReq(BaseModel):
