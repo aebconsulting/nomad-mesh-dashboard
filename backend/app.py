@@ -38,6 +38,11 @@ FEED_CAP = 500
 # Meridian's "online/heard" convention: a node counts as current if heard within
 # 2h. Derived direct-link edges use the same window -- a link is a claim about NOW.
 ONLINE_WINDOW_S = 7200
+# Captured NEIGHBORINFO links age out after ~2x the base's observed beacon cadence
+# (the GAT562 base emits NEIGHBORINFO about every 2h; the old Heltec base never
+# emitted it at all). A live link reappears within one interval, so anything older
+# than two intervals is no longer current. `since` still overrides for history views.
+NEIGHBOR_WINDOW_S = 4 * 3600
 IMG_RE = re.compile(r"^[A-Za-z0-9._-]+\.(png|jpe?g|webp|gif)$")
 DEST_RE = re.compile(r"^![0-9a-fA-F]{8}$")
 # Map assets are addressed by relative path (fonts have spaces, e.g. "Noto Sans Regular").
@@ -260,6 +265,12 @@ def _merge_mm(rows):
         if lh is None or lh <= (r["last_heard"] or 0):
             continue
         r["last_heard"] = lh
+        if r["node_id"] == BASE_NODE_ID:
+            # MeshMonitor's entry for the LOCAL node carries placeholder link
+            # metrics (snr 0 / hops 0 "to itself"): freshness is real, the link
+            # numbers are not. Overlaying them painted the base's own row with
+            # a bogus "Fair / 0 hops" signal instead of its correct "—".
+            continue
         snr, hops = _num(m.get("snr")), _num(m.get("lastMessageHops"))
         if snr is not None:
             r["snr"] = snr
@@ -341,8 +352,8 @@ def neighbors_links(since: float = 0.0):
     """Directed neighbor links (who hears whom) for the topology overlay: the latest
     edge per (node, neighbor) pair, joined to node positions/names. Only edges where
     BOTH endpoints have a position are returned (they're drawn on the map). `since`
-    defaults to the last 24h so links a node stops reporting age out."""
-    window = since if since > 0 else (time.time() - 86400)
+    defaults to NEIGHBOR_WINDOW_S so links a node stops reporting age out."""
+    window = since if since > 0 else (time.time() - NEIGHBOR_WINDOW_S)
     table_edges = q(
         "SELECT e.node_id AS from_id, n1.short_name AS from_name, n1.lat AS from_lat, n1.lon AS from_lon, "
         "e.neighbor_id AS to_id, n2.short_name AS to_name, n2.lat AS to_lat, n2.lon AS to_lon, "

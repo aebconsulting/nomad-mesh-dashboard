@@ -171,6 +171,36 @@ def test_derived_links_windowed_and_mm_fresh(client, monkeypatch):
     assert beef["to_lat"] == 34.3 and beef["ts"] == pytest.approx(now - 10)
 
 
+def test_base_row_keeps_null_link_metrics(client, monkeypatch):
+    """MeshMonitor's local-node entry has placeholder snr/hops -- the base's own
+    row must take the fresher lastHeard but NEVER the bogus link metrics."""
+    c, m = client
+    monkeypatch.setattr(m, "BASE_NODE_ID", "!bb22cc33")
+    now = time.time()
+    wire_mm(monkeypatch, m, [mm_node("!bb22cc33", "RZRB", now - 1, snr=0, hops=0)])
+    row = next(i for i in c.get("/api/nodes").json()["items"] if i["node_id"] == "!bb22cc33")
+    assert row["last_heard"] == pytest.approx(now - 1)
+    # db values untouched: fixture has snr NULL / hops 0; without the guard the
+    # overlay would have written MM's placeholder snr 0 over the NULL.
+    assert row["snr"] is None and row["hops"] == 0
+
+
+def test_captured_links_age_out(client, monkeypatch):
+    """A NEIGHBORINFO link the base stopped reporting must leave the overlay
+    after NEIGHBOR_WINDOW_S; an explicit `since` still widens the window."""
+    c, m = client
+    now = time.time()
+    con = sqlite3.connect(m.DB_PATH)
+    con.execute("INSERT INTO neighbors(ts,node_id,neighbor_id,snr) VALUES(?,'!bb22cc33','!aa11bb22',3.0)",
+                (now - 5 * 3600,))
+    con.commit(); con.close()
+    pairs = {(e["from_id"], e["to_id"]) for e in c.get("/api/neighbors").json()["items"]}
+    assert ("!bb22cc33", "!aa11bb22") not in pairs
+    pairs = {(e["from_id"], e["to_id"])
+             for e in c.get(f"/api/neighbors?since={now - 6 * 3600}").json()["items"]}
+    assert ("!bb22cc33", "!aa11bb22") in pairs
+
+
 def test_status_reports_meshmonitor_flag(client, monkeypatch):
     c, m = client
     wire_mm(monkeypatch, m, [mm_node("!deadbeef", "NEWN", time.time())])
